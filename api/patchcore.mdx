@@ -98,7 +98,7 @@ Initializes the PatchCore model with all required components including backbone,
 ```python
 import torch
 import patchcore.backbones
-from patchcore import PatchCore
+from patchcore.patchcore import PatchCore
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = PatchCore(device)
@@ -285,7 +285,7 @@ Loads a previously saved PatchCore model from disk.
 
 ```python
 import torch
-from patchcore import PatchCore
+from patchcore.patchcore import PatchCore
 import patchcore.common
 
 device = torch.device("cuda")

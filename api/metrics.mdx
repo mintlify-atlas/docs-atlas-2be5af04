@@ -71,7 +71,7 @@ print(f"Number of threshold points: {len(metrics['threshold'])}")
 
 ```python
 from torch.utils.data import DataLoader
-from patchcore import PatchCore
+from patchcore.patchcore import PatchCore
 from patchcore.metrics import compute_imagewise_retrieval_metrics
 
 # Load model and test data
@@ -180,7 +180,7 @@ print(f"FNR at optimal threshold: {metrics['optimal_fnr']:.4f}")
 
 ```python
 from torch.utils.data import DataLoader
-from patchcore import PatchCore
+from patchcore.patchcore import PatchCore
 from patchcore.metrics import compute_pixelwise_retrieval_metrics
 
 # Load model and test data
@@ -214,7 +214,7 @@ binary_masks = [(mask >= threshold).astype(int) for mask in masks]
 ```python
 import torch
 from torch.utils.data import DataLoader
-from patchcore import PatchCore
+from patchcore.patchcore import PatchCore
 from patchcore.metrics import (
     compute_imagewise_retrieval_metrics,
     compute_pixelwise_retrieval_metrics
