@@ -1,0 +1,467 @@
+---
+title: 'common'
+description: 'Core components for feature extraction, aggregation, and anomaly scoring'
+icon: 'layer-group'
+---
+
+## Overview
+
+The `common` module provides the essential building blocks for the PatchCore algorithm, including feature extraction from backbone networks, nearest neighbor search implementations, feature aggregation, and anomaly scoring mechanisms.
+
+## Classes
+
+### NetworkFeatureAggregator
+
+Efficient extraction of intermediate network features from specified layers of a backbone model.
+
+```python
+from patchcore.common import NetworkFeatureAggregator
+import torchvision.models as models
+
+backbone = models.wide_resnet50_2(pretrained=True)
+feature_aggregator = NetworkFeatureAggregator(
+    backbone=backbone,
+    layers_to_extract_from=["layer2", "layer3"],
+    device="cuda"
+)
+```
+
+#### Constructor Parameters
+
+<ParamField path="backbone" type="torch.nn.Module" required>
+  Torchvision model or custom PyTorch module to extract features from.
+</ParamField>
+
+<ParamField path="layers_to_extract_from" type="List[str]" required>
+  List of layer names to extract features from. Supports dot notation for nested modules (e.g., "layer2.3" or "layer3.0").
+</ParamField>
+
+<ParamField path="device" type="str | torch.device" required>
+  Device to run feature extraction on ("cpu", "cuda", or torch.device object).
+</ParamField>
+
+#### Methods
+
+##### `forward(images)`
+
+Extracts features from the specified layers for the input images.
+
+<ParamField path="images" type="torch.Tensor" required>
+  Input tensor of shape (batch_size, 3, H, W).
+</ParamField>
+
+<ResponseField name="return" type="dict[str, torch.Tensor]">
+  Dictionary mapping layer names to their feature tensors. Each feature tensor has shape (batch_size, channels, height, width).
+</ResponseField>
+
+```python
+images = torch.randn(4, 3, 224, 224).to("cuda")
+features = feature_aggregator(images)
+# features = {"layer2": tensor(4, 512, 28, 28), "layer3": tensor(4, 1024, 14, 14)}
+```
+
+##### `feature_dimensions(input_shape)`
+
+Computes the feature channel dimensions for all extraction layers given an input shape.
+
+<ParamField path="input_shape" type="tuple" required>
+  Shape of input images as (channels, height, width), e.g., (3, 224, 224).
+</ParamField>
+
+<ResponseField name="return" type="List[int]">
+  List of channel dimensions for each layer in `layers_to_extract_from`.
+</ResponseField>
+
+```python
+dimensions = feature_aggregator.feature_dimensions((3, 224, 224))
+# dimensions = [512, 1024]  # for layer2 and layer3
+```
+
+---
+
+### NearestNeighbourScorer
+
+Anomaly scoring class based on nearest neighbor distances in feature space.
+
+```python
+from patchcore.common import NearestNeighbourScorer, FaissNN
+
+scorer = NearestNeighbourScorer(
+    n_nearest_neighbours=9,
+    nn_method=FaissNN(on_gpu=True, num_workers=4)
+)
+```
+
+#### Constructor Parameters
+
+<ParamField path="n_nearest_neighbours" type="int" required>
+  Number of nearest neighbors to consider when computing anomaly scores.
+</ParamField>
+
+<ParamField path="nn_method" type="FaissNN | ApproximateFaissNN" default="FaissNN(False, 4)">
+  Nearest neighbor search method instance. Options:
+  - `FaissNN(on_gpu, num_workers)` - Exact search
+  - `ApproximateFaissNN(on_gpu, num_workers)` - Approximate search using IVF-PQ
+</ParamField>
+
+#### Methods
+
+##### `fit(detection_features)`
+
+Fits the scorer on training features by building a nearest neighbor search index.
+
+<ParamField path="detection_features" type="List[np.ndarray]" required>
+  List of feature arrays, where each array has shape (num_samples, feature_dim). Features from multiple layers are concatenated internally.
+</ParamField>
+
+```python
+# training_features is a list of numpy arrays from different layers
+scorer.fit(training_features)
+```
+
+##### `predict(query_features)`
+
+Computes anomaly scores for query samples by finding nearest neighbors in the training set.
+
+<ParamField path="query_features" type="List[np.ndarray]" required>
+  List of feature arrays for test samples, matching the format used in `fit()`.
+</ParamField>
+
+<ResponseField name="return" type="tuple">
+  Tuple of (anomaly_scores, query_distances, query_nns):
+  - `anomaly_scores` (np.ndarray): Mean distance to k-nearest neighbors, shape (num_samples,)
+  - `query_distances` (np.ndarray): Distances to each of k neighbors, shape (num_samples, k)
+  - `query_nns` (np.ndarray): Indices of nearest neighbors, shape (num_samples, k)
+</ResponseField>
+
+```python
+scores, distances, neighbors = scorer.predict(test_features)
+# scores.shape = (num_test_samples,)
+# distances.shape = (num_test_samples, 9)
+```
+
+##### `save(save_folder, save_features_separately=False, prepend="")`
+
+Saves the scorer state to disk.
+
+<ParamField path="save_folder" type="str" required>
+  Directory to save the scorer files.
+</ParamField>
+
+<ParamField path="save_features_separately" type="bool" default="False">
+  If True, saves detection features as a separate pickle file.
+</ParamField>
+
+<ParamField path="prepend" type="str" default="">
+  Prefix string for saved filenames.
+</ParamField>
+
+```python
+scorer.save("./models/bottle", save_features_separately=True)
+# Saves: nnscorer_search_index.faiss and nnscorer_features.pkl
+```
+
+##### `load(load_folder, prepend="")`
+
+Loads a previously saved scorer from disk.
+
+<ParamField path="load_folder" type="str" required>
+  Directory containing saved scorer files.
+</ParamField>
+
+<ParamField path="prepend" type="str" default="">
+  Prefix string used when saving the files.
+</ParamField>
+
+```python
+scorer.load("./models/bottle")
+```
+
+---
+
+### FaissNN
+
+Exact nearest neighbor search using FAISS with optional GPU acceleration.
+
+```python
+from patchcore.common import FaissNN
+
+# CPU-based search with 4 threads
+nn_cpu = FaissNN(on_gpu=False, num_workers=4)
+
+# GPU-accelerated search
+nn_gpu = FaissNN(on_gpu=True, num_workers=4)
+```
+
+#### Constructor Parameters
+
+<ParamField path="on_gpu" type="bool" default="False">
+  If True, runs nearest neighbor searches on GPU for faster computation.
+</ParamField>
+
+<ParamField path="num_workers" type="int" default="4">
+  Number of CPU threads to use for FAISS operations.
+</ParamField>
+
+#### Methods
+
+##### `fit(features)`
+
+Builds the search index from training features.
+
+<ParamField path="features" type="np.ndarray" required>
+  Training features of shape (num_samples, feature_dim).
+</ParamField>
+
+```python
+features = np.random.randn(1000, 512).astype(np.float32)
+nn_method.fit(features)
+```
+
+##### `run(n_nearest_neighbours, query_features, index_features=None)`
+
+Performs nearest neighbor search.
+
+<ParamField path="n_nearest_neighbours" type="int" required>
+  Number of nearest neighbors to retrieve.
+</ParamField>
+
+<ParamField path="query_features" type="np.ndarray" required>
+  Query features of shape (num_queries, feature_dim).
+</ParamField>
+
+<ParamField path="index_features" type="np.ndarray | None" default="None">
+  If provided, builds a temporary index from these features instead of using the fitted index.
+</ParamField>
+
+<ResponseField name="return" type="tuple">
+  Tuple of (distances, indices):
+  - `distances` (np.ndarray): Shape (num_queries, n_nearest_neighbours)
+  - `indices` (np.ndarray): Shape (num_queries, n_nearest_neighbours)
+</ResponseField>
+
+```python
+query = np.random.randn(10, 512).astype(np.float32)
+distances, indices = nn_method.run(5, query)
+# distances.shape = (10, 5)
+```
+
+##### `save(filename)` / `load(filename)`
+
+Save or load the FAISS index.
+
+```python
+nn_method.save("search_index.faiss")
+nn_method.load("search_index.faiss")
+```
+
+##### `reset_index()`
+
+Resets the search index, freeing memory.
+
+---
+
+### ApproximateFaissNN
+
+Approximate nearest neighbor search using FAISS IVF-PQ for large-scale datasets.
+
+```python
+from patchcore.common import ApproximateFaissNN
+
+approx_nn = ApproximateFaissNN(on_gpu=True, num_workers=4)
+```
+
+Inherits from `FaissNN` and uses:
+- **IndexIVFPQ**: Inverted file index with product quantization
+- **512 centroids** for coarse quantization
+- **64 sub-quantizers** with 8 bits per code
+
+<Note>
+  Approximate search is faster but less accurate than exact search. Best for datasets with >100k samples.
+</Note>
+
+---
+
+### Preprocessing
+
+Neural network module for preprocessing features from multiple layers to a common dimension.
+
+```python
+from patchcore.common import Preprocessing
+
+preprocessing = Preprocessing(
+    input_dims=[512, 1024, 2048],  # Dimensions from layer1, layer2, layer3
+    output_dim=1024
+)
+
+# features is a list of tensors with different dimensions
+preprocessed = preprocessing(features)
+# Output shape: (batch_size, 3, 1024)
+```
+
+#### Constructor Parameters
+
+<ParamField path="input_dims" type="List[int]" required>
+  List of input feature dimensions from different layers.
+</ParamField>
+
+<ParamField path="output_dim" type="int" required>
+  Target dimension for all features after preprocessing.
+</ParamField>
+
+---
+
+### Aggregator
+
+Aggregates multi-layer features into a single feature vector using adaptive average pooling.
+
+```python
+from patchcore.common import Aggregator
+
+aggregator = Aggregator(target_dim=1024)
+
+# Input: (batch_size, num_layers, layer_dim)
+# Output: (batch_size, target_dim)
+aggregated = aggregator(features)
+```
+
+#### Constructor Parameters
+
+<ParamField path="target_dim" type="int" required>
+  Target dimension for the aggregated features.
+</ParamField>
+
+---
+
+### RescaleSegmentor
+
+Converts patch-level anomaly scores to pixel-level segmentation maps.
+
+```python
+from patchcore.common import RescaleSegmentor
+
+segmentor = RescaleSegmentor(
+    device="cuda",
+    target_size=224
+)
+
+# patch_scores shape: (batch_size, H_patches, W_patches)
+segmentations = segmentor.convert_to_segmentation(patch_scores)
+# Returns list of smoothed segmentation maps
+```
+
+#### Constructor Parameters
+
+<ParamField path="device" type="str | torch.device" required>
+  Device for tensor operations.
+</ParamField>
+
+<ParamField path="target_size" type="int" default="224">
+  Target size for upsampling the segmentation maps (square).
+</ParamField>
+
+#### Methods
+
+##### `convert_to_segmentation(patch_scores)`
+
+<ParamField path="patch_scores" type="np.ndarray | torch.Tensor" required>
+  Patch-level anomaly scores to convert to segmentation maps.
+</ParamField>
+
+<ResponseField name="return" type="List[np.ndarray]">
+  List of smoothed segmentation maps, one per image in the batch. Each map has shape (target_size, target_size).
+</ResponseField>
+
+The method applies:
+1. Bilinear upsampling to target size
+2. Gaussian smoothing with sigma=4
+
+---
+
+## Merger Classes
+
+Feature merging utilities for combining multi-layer features.
+
+### ConcatMerger
+
+Flattens and concatenates features from multiple layers.
+
+```python
+from patchcore.common import ConcatMerger
+
+merger = ConcatMerger()
+# features = [array(N, C1, H1, W1), array(N, C2, H2, W2)]
+merged = merger.merge(features)
+# Output shape: (N, C1*H1*W1 + C2*H2*W2)
+```
+
+### AverageMerger
+
+Spatially averages features and concatenates across layers.
+
+```python
+from patchcore.common import AverageMerger
+
+merger = AverageMerger()
+# features = [array(N, C1, H1, W1), array(N, C2, H2, W2)]
+merged = merger.merge(features)
+# Output shape: (N, C1 + C2)
+```
+
+---
+
+## Usage Example
+
+```python
+import torch
+import torchvision.models as models
+import numpy as np
+from patchcore.common import (
+    NetworkFeatureAggregator,
+    NearestNeighbourScorer,
+    FaissNN
+)
+
+# Setup feature extraction
+backbone = models.wide_resnet50_2(pretrained=True)
+backbone.eval()
+
+feature_extractor = NetworkFeatureAggregator(
+    backbone=backbone,
+    layers_to_extract_from=["layer2", "layer3"],
+    device="cuda"
+)
+
+# Extract features from training images
+train_features_layer2 = []
+train_features_layer3 = []
+
+for images in train_loader:
+    images = images.to("cuda")
+    features = feature_extractor(images)
+    
+    # Reshape spatial features to vectors
+    layer2 = features["layer2"].cpu().numpy()
+    layer3 = features["layer3"].cpu().numpy()
+    
+    train_features_layer2.append(layer2.reshape(len(layer2), -1))
+    train_features_layer3.append(layer3.reshape(len(layer3), -1))
+
+train_features_layer2 = np.concatenate(train_features_layer2)
+train_features_layer3 = np.concatenate(train_features_layer3)
+
+# Train anomaly scorer
+scorer = NearestNeighbourScorer(
+    n_nearest_neighbours=9,
+    nn_method=FaissNN(on_gpu=True, num_workers=4)
+)
+
+scorer.fit([train_features_layer2, train_features_layer3])
+
+# Predict on test images
+test_features = [test_layer2, test_layer3]  # Extract similarly
+anomalies, distances, neighbors = scorer.predict(test_features)
+
+print(f"Anomaly scores: {anomalies}")
+print(f"Mean score: {anomalies.mean():.4f}")
+```

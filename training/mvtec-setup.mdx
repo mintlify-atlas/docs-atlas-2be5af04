@@ -1,0 +1,315 @@
+---
+title: 'MVTec AD Dataset Setup'
+description: 'Download and organize the MVTec AD dataset for PatchCore training'
+icon: 'database'
+---
+
+## About MVTec AD
+
+The MVTec Anomaly Detection (MVTec AD) dataset is the standard benchmark for industrial anomaly detection. It contains high-resolution images of 15 different object and texture categories with various types of defects.
+
+<Note>
+  **Dataset Statistics**
+  - 15 product categories
+  - 5,354 images total (3,629 training + 1,725 testing)
+  - Training images: only defect-free ("good") samples
+  - Test images: defect-free and various anomaly types
+  - Ground truth masks for pixel-level evaluation
+</Note>
+
+## Download the Dataset
+
+<Steps>
+  <Step title="Visit MVTec Website">
+    Go to the official MVTec AD dataset page:
+    
+    <Card>
+      **MVTec AD Download**
+      
+      https://www.mvtec.com/company/research/datasets/mvtec-ad
+    </Card>
+    
+    Fill out the download form to access the dataset.
+  </Step>
+  
+  <Step title="Download and Extract">
+    Download the complete dataset (approximately 4.9 GB compressed).
+    
+    ```bash Extract Dataset
+    # Extract the downloaded archive
+    tar -xvf mvtec_anomaly_detection.tar.xz
+    # or
+    unzip mvtec_anomaly_detection.zip
+    ```
+  </Step>
+  
+  <Step title="Verify Directory Structure">
+    Ensure the extracted folder follows the correct structure (see below).
+  </Step>
+</Steps>
+
+## Required Directory Structure
+
+The dataset must be organized with the following structure for PatchCore to load it correctly:
+
+```bash Directory Tree
+mvtec/
+├── bottle/
+│   ├── ground_truth/
+│   │   ├── broken_large/
+│   │   ├── broken_small/
+│   │   ├── contamination/
+│   │   └── ...
+│   ├── test/
+│   │   ├── good/
+│   │   ├── broken_large/
+│   │   ├── broken_small/
+│   │   ├── contamination/
+│   │   └── ...
+│   └── train/
+│       └── good/
+├── cable/
+│   ├── ground_truth/
+│   ├── test/
+│   └── train/
+├── capsule/
+├── carpet/
+├── grid/
+├── hazelnut/
+├── leather/
+├── metal_nut/
+├── pill/
+├── screw/
+├── tile/
+├── toothbrush/
+├── transistor/
+├── wood/
+└── zipper/
+```
+
+<Warning>
+  The directory structure **must** match this layout exactly. PatchCore expects:
+  - `train/good/` for training images
+  - `test/` with subdirectories for each defect type
+  - `ground_truth/` with pixel-level masks for defects
+</Warning>
+
+## Dataset Categories
+
+MVTec AD includes 15 categories across objects and textures:
+
+<Tabs>
+  <Tab title="Object Categories">
+    **Objects** (rigid items with consistent appearance):
+    
+    - `bottle` - Glass bottles
+    - `cable` - Power cables
+    - `capsule` - Pharmaceutical capsules
+    - `hazelnut` - Hazelnuts
+    - `metal_nut` - Metal nuts
+    - `pill` - Pharmaceutical pills
+    - `screw` - Screws
+    - `toothbrush` - Toothbrushes
+    - `transistor` - Electronic transistors
+    - `zipper` - Zippers
+  </Tab>
+  
+  <Tab title="Texture Categories">
+    **Textures** (materials with varying patterns):
+    
+    - `carpet` - Carpet fabric
+    - `grid` - Grid patterns
+    - `leather` - Leather material
+    - `tile` - Floor tiles
+    - `wood` - Wood surface
+  </Tab>
+</Tabs>
+
+## Verify Installation
+
+Check that your dataset is properly structured:
+
+<CodeGroup>
+```bash Quick Check
+# Navigate to dataset directory
+cd /path/to/mvtec
+
+# Count categories (should be 15)
+ls -1 | wc -l
+
+# Check a specific category structure
+ls -R bottle/
+```
+
+```bash Detailed Verification
+# Check all categories exist
+for category in bottle cable capsule carpet grid hazelnut leather metal_nut pill screw tile toothbrush transistor wood zipper; do
+  if [ -d "$category" ]; then
+    echo "✓ $category exists"
+  else
+    echo "✗ $category missing"
+  fi
+done
+
+# Count training images for each category
+for category in */; do
+  train_count=$(find "$category/train/good" -type f 2>/dev/null | wc -l)
+  echo "$category: $train_count training images"
+done
+```
+
+```python Python Verification
+import os
+from pathlib import Path
+
+data_path = "/path/to/mvtec"
+categories = [
+    "bottle", "cable", "capsule", "carpet", "grid",
+    "hazelnut", "leather", "metal_nut", "pill", "screw",
+    "tile", "toothbrush", "transistor", "wood", "zipper"
+]
+
+for category in categories:
+    train_path = Path(data_path) / category / "train" / "good"
+    test_path = Path(data_path) / category / "test"
+    
+    if train_path.exists() and test_path.exists():
+        train_count = len(list(train_path.glob("*.png")))
+        print(f"✓ {category}: {train_count} training images")
+    else:
+        print(f"✗ {category}: Invalid structure")
+```
+</CodeGroup>
+
+## Configure Dataset Path
+
+Once the dataset is ready, you'll reference it in training commands:
+
+<CodeGroup>
+```bash Shell Variable
+# Set environment variable
+export MVTEC_DATA=/path/to/mvtec
+
+# Use in training commands
+python bin/run_patchcore.py [...] dataset [...] mvtec $MVTEC_DATA
+```
+
+```bash Script Example
+#!/bin/bash
+# Define dataset path
+datapath=/path/to/mvtec
+
+# Define categories to train on
+datasets=('bottle' 'cable' 'capsule' 'carpet' 'grid' 'hazelnut' 
+          'leather' 'metal_nut' 'pill' 'screw' 'tile' 'toothbrush' 
+          'transistor' 'wood' 'zipper')
+
+# Create dataset flags for CLI
+dataset_flags=($(for dataset in "${datasets[@]}"; do echo '-d '$dataset; done))
+
+# Use in training command
+python bin/run_patchcore.py --gpu 0 --seed 0 results \
+  patch_core -b wideresnet50 -le layer2 -le layer3 [...] \
+  sampler -p 0.1 approx_greedy_coreset \
+  dataset --resize 256 --imagesize 224 "${dataset_flags[@]}" mvtec $datapath
+```
+</CodeGroup>
+
+## Dataset Loading Process
+
+When you run training, PatchCore loads the dataset as follows:
+
+<Steps>
+  <Step title="Locate Category">
+    For each specified category (e.g., `bottle`), PatchCore looks for:
+    ```
+    {data_path}/bottle/train/good/*.png
+    ```
+  </Step>
+  
+  <Step title="Apply Transformations">
+    Each image is:
+    1. Resized to `--resize` (default: 256)
+    2. Center-cropped to `--imagesize` (default: 224)
+    3. Converted to tensor
+    4. Normalized with ImageNet mean/std
+    
+    ```python Normalization
+    IMAGENET_MEAN = [0.485, 0.456, 0.406]
+    IMAGENET_STD = [0.229, 0.224, 0.225]
+    ```
+  </Step>
+  
+  <Step title="Create DataLoader">
+    Images are batched with:
+    - `batch_size`: Default 2 (configurable)
+    - `num_workers`: Default 8 (parallel loading)
+    - `shuffle`: False (deterministic order)
+  </Step>
+</Steps>
+
+## Training on Subset of Categories
+
+You don't have to train on all 15 categories. Specify only the ones you need:
+
+```bash Train Single Category
+# Train only on bottle category
+python bin/run_patchcore.py --gpu 0 --seed 0 results \
+  patch_core -b wideresnet50 -le layer2 -le layer3 \
+  --pretrain_embed_dimension 1024 --target_embed_dimension 1024 \
+  --anomaly_scorer_num_nn 1 --patchsize 3 --faiss_on_gpu \
+  sampler -p 0.1 approx_greedy_coreset \
+  dataset --resize 256 --imagesize 224 -d bottle mvtec /path/to/mvtec
+```
+
+```bash Train Multiple Categories
+# Train on specific categories
+python bin/run_patchcore.py --gpu 0 --seed 0 results \
+  patch_core [...] sampler [...] \
+  dataset --resize 256 --imagesize 224 \
+    -d bottle -d cable -d capsule \
+    mvtec /path/to/mvtec
+```
+
+## Common Issues
+
+<AccordionGroup>
+  <Accordion title="FileNotFoundError: No such file or directory">
+    **Problem**: Dataset path is incorrect or structure doesn't match expected format.
+    
+    **Solution**:
+    1. Verify the path exists: `ls /path/to/mvtec`
+    2. Check category exists: `ls /path/to/mvtec/bottle`
+    3. Verify train folder: `ls /path/to/mvtec/bottle/train/good`
+  </Accordion>
+  
+  <Accordion title="Empty dataset or zero training images">
+    **Problem**: Training images not in correct location.
+    
+    **Solution**:
+    - All training images must be in `{category}/train/good/`
+    - Check for `.png` or `.jpg` files in that directory
+    - Verify file permissions (readable)
+  </Accordion>
+  
+  <Accordion title="Ground truth masks not found during testing">
+    **Problem**: Mask files missing or in wrong location.
+    
+    **Solution**:
+    - Masks should be in `{category}/ground_truth/{defect_type}/`
+    - Mask filenames must match test image filenames
+    - Only defect images have masks (good samples don't need masks)
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Train Single Model" icon="play" href="/training/single-model">
+    Start training with WideResNet50 backbone
+  </Card>
+  
+  <Card title="Configuration Guide" icon="sliders" href="/training/configuration">
+    Learn about all training parameters
+  </Card>
+</CardGroup>

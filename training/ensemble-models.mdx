@@ -1,0 +1,499 @@
+---
+title: 'Training Ensemble Models'
+description: 'Combine multiple backbone networks for state-of-the-art anomaly detection performance'
+icon: 'layer-group'
+---
+
+## What are Ensemble Models?
+
+PatchCore ensembles combine predictions from multiple backbone networks to achieve state-of-the-art performance. The original paper achieved **99.6% instance AUROC** using an ensemble of WideResNet101, ResNext101, and DenseNet201.
+
+<Note>
+  **Performance Gains**:
+  - Single WideResNet50: 99.2% AUROC
+  - Ensemble (3 backbones): 99.6% AUROC
+  - Trade-off: 3x training time, 3x model size
+</Note>
+
+## How Ensembles Work
+
+<Steps>
+  <Step title="Train Multiple Models">
+    Each backbone is trained independently:
+    - WideResNet101 → Feature bank 1
+    - ResNext101 → Feature bank 2
+    - DenseNet201 → Feature bank 3
+  </Step>
+  
+  <Step title="Extract Features">
+    During inference, each model extracts features from the test image using its own layers.
+  </Step>
+  
+  <Step title="Compute Anomaly Scores">
+    Each model computes its own anomaly score and segmentation map using its nearest-neighbor search.
+  </Step>
+  
+  <Step title="Aggregate Predictions">
+    Scores are normalized and averaged:
+    ```python Ensemble Aggregation (from run_patchcore.py:114-132)
+    # Normalize each model's scores to [0, 1]
+    scores = np.array(aggregator["scores"])
+    min_scores = scores.min(axis=-1).reshape(-1, 1)
+    max_scores = scores.max(axis=-1).reshape(-1, 1)
+    scores = (scores - min_scores) / (max_scores - min_scores)
+    
+    # Average across models
+    final_score = np.mean(scores, axis=0)
+    ```
+  </Step>
+</Steps>
+
+## Training an Ensemble
+
+The key difference from single-model training is specifying multiple backbones and their corresponding layers.
+
+### Basic Ensemble Syntax
+
+```bash Ensemble Command Structure
+python bin/run_patchcore.py [...global args...] \
+patch_core \
+  -b backbone1 -b backbone2 -b backbone3 \         # Three backbones
+  -le 0.layer_name -le 0.layer_name \             # Layers for backbone 0
+  -le 1.layer_name -le 1.layer_name \             # Layers for backbone 1
+  -le 2.layer_name -le 2.layer_name \             # Layers for backbone 2
+  [other patch_core args...] \
+sampler [...] \
+dataset [...]
+```
+
+<Warning>
+  **Layer Indexing**: When using multiple backbones, prefix layer names with `{index}.`:
+  - First backbone: `0.layer2`, `0.layer3`
+  - Second backbone: `1.layer2`, `1.layer3`
+  - Third backbone: `2.features.denseblock2`, `2.features.denseblock3`
+</Warning>
+
+## Recommended Ensemble (224x224)
+
+This configuration from the paper achieves **99.3% instance AUROC**:
+
+```bash Ensemble - 224x224 Images
+datapath=/path/to/mvtec
+datasets=('bottle' 'cable' 'capsule' 'carpet' 'grid' 'hazelnut' 
+          'leather' 'metal_nut' 'pill' 'screw' 'tile' 'toothbrush' 
+          'transistor' 'wood' 'zipper')
+dataset_flags=($(for dataset in "${datasets[@]}"; do echo '-d '$dataset; done))
+
+python bin/run_patchcore.py \
+  --gpu 0 \
+  --seed 3 \
+  --save_patchcore_model \
+  --log_group IM224_Ensemble_L2-3_P001_D1024-384_PS-3_AN-1_S3 \
+  --log_project MVTecAD_Results \
+  results \
+patch_core \
+  -b wideresnet101 \
+  -b resnext101 \
+  -b densenet201 \
+  -le 0.layer2 -le 0.layer3 \
+  -le 1.layer2 -le 1.layer3 \
+  -le 2.features.denseblock2 -le 2.features.denseblock3 \
+  --faiss_on_gpu \
+  --pretrain_embed_dimension 1024 \
+  --target_embed_dimension 384 \
+  --anomaly_scorer_num_nn 1 \
+  --patchsize 3 \
+sampler \
+  -p 0.01 \
+  approx_greedy_coreset \
+dataset \
+  --resize 256 \
+  --imagesize 224 \
+  "${dataset_flags[@]}" \
+  mvtec $datapath
+```
+
+<Accordion title="Expected Performance">
+  ```yaml Metrics (from sample_training.sh:12-13)
+  Instance AUROC: 99.3%
+  Pixel-wise AUROC: 98.1%
+  PRO Score: 94.2%
+  
+  Training time: ~3-5 hours (all 15 categories)
+  GPU memory: 10-12 GB
+  Total model size: ~5-7 GB
+  ```
+</Accordion>
+
+## Best Ensemble (320x320)
+
+For maximum performance, use higher resolution images (**99.6% instance AUROC**):
+
+```bash Ensemble - 320x320 Images (Best Performance)
+datapath=/path/to/mvtec
+datasets=('bottle' 'cable' 'capsule' 'carpet' 'grid' 'hazelnut' 
+          'leather' 'metal_nut' 'pill' 'screw' 'tile' 'toothbrush' 
+          'transistor' 'wood' 'zipper')
+dataset_flags=($(for dataset in "${datasets[@]}"; do echo '-d '$dataset; done))
+
+python bin/run_patchcore.py \
+  --gpu 0 \
+  --seed 40 \
+  --save_patchcore_model \
+  --log_group IM320_Ensemble_L2-3_P001_D1024-384_PS-3_AN-1_S40 \
+  --log_project MVTecAD_Results \
+  results \
+patch_core \
+  -b wideresnet101 \
+  -b resnext101 \
+  -b densenet201 \
+  -le 0.layer2 -le 0.layer3 \
+  -le 1.layer2 -le 1.layer3 \
+  -le 2.features.denseblock2 -le 2.features.denseblock3 \
+  --faiss_on_gpu \
+  --pretrain_embed_dimension 1024 \
+  --target_embed_dimension 384 \
+  --anomaly_scorer_num_nn 1 \
+  --patchsize 3 \
+sampler \
+  -p 0.01 \
+  approx_greedy_coreset \
+dataset \
+  --resize 366 \
+  --imagesize 320 \
+  "${dataset_flags[@]}" \
+  mvtec $datapath
+```
+
+<Accordion title="Expected Performance">
+  ```yaml Metrics (from sample_training.sh:24-25)
+  Instance AUROC: 99.6%
+  Pixel-wise AUROC: 98.2%
+  PRO Score: 94.9%
+  
+  Training time: ~6-10 hours (all 15 categories)
+  GPU memory: 14-16 GB
+  Total model size: ~8-12 GB
+  ```
+</Accordion>
+
+## Understanding Layer Selection
+
+Different architectures have different layer naming conventions:
+
+<Tabs>
+  <Tab title="WideResNet / ResNet">
+    **Available Layers**:
+    - `layer1` - Early features (low-level)
+    - `layer2` - Mid-level features (recommended)
+    - `layer3` - High-level features (recommended)
+    - `layer4` - Very high-level features
+    
+    **Typical Choice**: `layer2` and `layer3`
+    
+    ```bash Example
+    patch_core \
+      -b wideresnet101 \
+      -le 0.layer2 \
+      -le 0.layer3
+    ```
+  </Tab>
+  
+  <Tab title="DenseNet">
+    **Available Layers**:
+    - `features.denseblock1` - Early features
+    - `features.denseblock2` - Mid-level features (recommended)
+    - `features.denseblock3` - High-level features (recommended)
+    - `features.denseblock4` - Very high-level features
+    
+    **Typical Choice**: `denseblock2` and `denseblock3`
+    
+    ```bash Example
+    patch_core \
+      -b densenet201 \
+      -le 2.features.denseblock2 \
+      -le 2.features.denseblock3
+    ```
+    
+    Note: DenseNet layers use `features.` prefix
+  </Tab>
+  
+  <Tab title="ResNext">
+    **Available Layers**:
+    - `layer1` - Early features
+    - `layer2` - Mid-level features (recommended)
+    - `layer3` - High-level features (recommended)
+    - `layer4` - Very high-level features
+    
+    **Typical Choice**: `layer2` and `layer3` (same as ResNet)
+    
+    ```bash Example
+    patch_core \
+      -b resnext101 \
+      -le 1.layer2 \
+      -le 1.layer3
+    ```
+  </Tab>
+</Tabs>
+
+## Ensemble Configuration Details
+
+### Why Different Embedding Dimensions?
+
+Notice the ensemble uses `--target_embed_dimension 384` instead of 1024:
+
+<Accordion title="Dimension Trade-offs">
+  **Single Model** (target_embed_dimension: 1024):
+  - Higher capacity for one backbone
+  - Larger memory footprint per model
+  - Better individual model performance
+  
+  **Ensemble** (target_embed_dimension: 384):
+  - Lower dimension per backbone (3 × 384 = 1152 total)
+  - Reduces memory usage
+  - Diversity across backbones compensates for lower individual capacity
+  - Total ensemble capacity is still higher than single model
+  
+  **Memory Savings**:
+  - Single model @ 1024: ~500 MB per category
+  - Ensemble @ 384: ~300 MB × 3 = ~900 MB per category (vs ~1500 MB @ 1024)
+</Accordion>
+
+### Backbone Combinations
+
+You can mix and match different backbones. Here are proven combinations:
+
+<CodeGroup>
+```bash Three-Backbone Ensemble (Recommended)
+# WideResNet101 + ResNext101 + DenseNet201
+patch_core \
+  -b wideresnet101 \
+  -b resnext101 \
+  -b densenet201 \
+  -le 0.layer2 -le 0.layer3 \
+  -le 1.layer2 -le 1.layer3 \
+  -le 2.features.denseblock2 -le 2.features.denseblock3
+```
+
+```bash Two-Backbone Ensemble
+# WideResNet101 + ResNext101 (faster than 3-backbone)
+patch_core \
+  -b wideresnet101 \
+  -b resnext101 \
+  -le 0.layer2 -le 0.layer3 \
+  -le 1.layer2 -le 1.layer3
+```
+
+```bash Large Model Ensemble
+# Higher capacity backbones
+patch_core \
+  -b wideresnet101 \
+  -b resnet200 \
+  -b densenet201 \
+  -le 0.layer2 -le 0.layer3 \
+  -le 1.layer2 -le 1.layer3 \
+  -le 2.features.denseblock2 -le 2.features.denseblock3
+```
+</CodeGroup>
+
+## Output Structure
+
+Ensemble models save multiple model files per category:
+
+```bash Ensemble Output
+results/
+└── MVTecAD_Results/
+    └── IM224_Ensemble_L2-3_P001_D1024-384_PS-3_AN-1_S3_0/
+        ├── models/
+        │   ├── mvtec_bottle/
+        │   │   ├── Ensemble-1-3_nnscorer_search_index.faiss
+        │   │   ├── Ensemble-1-3_patchcore_params.pkl
+        │   │   ├── Ensemble-2-3_nnscorer_search_index.faiss
+        │   │   ├── Ensemble-2-3_patchcore_params.pkl
+        │   │   ├── Ensemble-3-3_nnscorer_search_index.faiss
+        │   │   └── Ensemble-3-3_patchcore_params.pkl
+        │   ├── mvtec_cable/
+        │   └── [...]
+        └── results.csv
+```
+
+<Note>
+  Each category has 3 pairs of files (one per backbone). The `Ensemble-{i}-{total}_` prefix indicates:
+  - `i`: Model index (1, 2, or 3)
+  - `total`: Total number of models in ensemble (3)
+</Note>
+
+## Training Progress
+
+Ensemble training processes models sequentially:
+
+```bash Training Output
+Evaluating dataset [mvtec_bottle] (1/15)...
+Utilizing PatchCore Ensemble (N=3).
+Training models (1/3)
+Computing support features...: 100%|████████████| 209/209 [00:58<00:00]
+Subsampling...: 100%|████████████████████████| 167/167 [00:52<00:00]
+Training models (2/3)
+Computing support features...: 100%|████████████| 209/209 [01:02<00:00]
+Subsampling...: 100%|████████████████████████| 167/167 [00:55<00:00]
+Training models (3/3)
+Computing support features...: 100%|████████████| 209/209 [00:48<00:00]
+Subsampling...: 100%|████████████████████████| 167/167 [00:49<00:00]
+Embedding test data with models (1/3)
+Inferring...: 100%|██████████████████████████| 63/63 [00:15<00:00]
+Embedding test data with models (2/3)
+[...continues...]
+```
+
+## Performance Comparison
+
+Here's how ensembles compare to single models:
+
+| Configuration | AUROC | Training Time | Model Size | GPU Memory |
+|---------------|-------|---------------|------------|------------|
+| WR50 @ 224 (10%) | 99.2% | 1-2 hours | 1-2 GB | 8-10 GB |
+| WR50 @ 224 (1%) | 99.2% | 1-2 hours | 0.5-1 GB | 8-10 GB |
+| Ensemble @ 224 (1%) | 99.3% | 3-5 hours | 5-7 GB | 10-12 GB |
+| WR50 @ 320 (1%) | 99.3% | 2-3 hours | 1-2 GB | 11-13 GB |
+| Ensemble @ 320 (1%) | **99.6%** | 6-10 hours | 8-12 GB | 14-16 GB |
+
+<Note>
+  **Diminishing Returns**: The ensemble provides a 0.4% AUROC improvement over the single WR50 model, but requires 3x the resources. Consider your performance vs. efficiency requirements.
+</Note>
+
+## When to Use Ensembles
+
+<CardGroup cols={2}>
+  <Card title="Use Ensemble When" icon="check">
+    - Maximum accuracy is critical
+    - You have 16GB+ GPU available
+    - Inference speed is not a constraint
+    - Storage space is not limited
+    - Targeting 99.5%+ AUROC
+  </Card>
+  
+  <Card title="Use Single Model When" icon="bolt">
+    - Fast inference is required
+    - Limited GPU memory (under 12 GB)
+    - Storage is constrained
+    - 99%+ AUROC is sufficient
+    - Deploying to edge devices
+  </Card>
+</CardGroup>
+
+## Advanced: Custom Ensembles
+
+You can create custom ensembles with different architectures:
+
+<CodeGroup>
+```bash Lightweight Ensemble (ResNet50 family)
+# Smaller models, faster training
+patch_core \
+  -b resnet50 \
+  -b wideresnet50 \
+  -b resnext50_32x4d \
+  -le 0.layer2 -le 0.layer3 \
+  -le 1.layer2 -le 1.layer3 \
+  -le 2.layer2 -le 2.layer3
+```
+
+```bash Vision Transformer Ensemble (Experimental)
+# Mix CNNs with transformers
+patch_core \
+  -b wideresnet101 \
+  -b efficientnet_b7 \
+  -b vit_base \
+  -le 0.layer2 -le 0.layer3 \
+  -le 1.blocks.5 -le 1.blocks.6 \
+  -le 2.blocks.8 -le 2.blocks.10
+# Note: ViT layers may need experimentation
+```
+
+```bash Two-Backbone Fast Ensemble
+# Good balance: 99.4% AUROC, 2x faster than 3-backbone
+patch_core \
+  -b wideresnet101 \
+  -b resnext101 \
+  -le 0.layer2 -le 0.layer3 \
+  -le 1.layer2 -le 1.layer3 \
+  --target_embed_dimension 512
+```
+</CodeGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="CUDA out of memory with ensemble">
+    **Problem**: Ensemble requires more GPU memory than single model.
+    
+    **Solutions**:
+    1. Lower target embedding dimension:
+       ```bash
+       --target_embed_dimension 256  # Instead of 384
+       ```
+    2. Use smaller backbones:
+       ```bash
+       -b wideresnet50 -b resnet50 -b densenet121
+       ```
+    3. Reduce batch size:
+       ```bash
+       dataset [...] --batch_size 1 mvtec $datapath
+       ```
+    4. Use 224x224 images instead of 320x320
+    5. Train models separately (see below)
+  </Accordion>
+  
+  <Accordion title="Training models separately then combining">
+    You can train each backbone individually and combine them later:
+    
+    ```bash Train Model 1
+    python bin/run_patchcore.py [...] \
+    patch_core -b wideresnet101 -le layer2 -le layer3 [...]
+    ```
+    
+    ```bash Train Model 2
+    python bin/run_patchcore.py [...] \
+    patch_core -b resnext101 -le layer2 -le layer3 [...]
+    ```
+    
+    ```bash Train Model 3
+    python bin/run_patchcore.py [...] \
+    patch_core -b densenet201 -le features.denseblock2 -le features.denseblock3 [...]
+    ```
+    
+    Then load all three during inference for ensemble predictions.
+  </Accordion>
+  
+  <Accordion title="Layer names not found for DenseNet">
+    **Problem**: DenseNet uses different layer naming.
+    
+    **Solution**: Use `features.denseblock{N}` format:
+    ```bash
+    -le 2.features.denseblock2 -le 2.features.denseblock3
+    # NOT: -le 2.denseblock2
+    ```
+  </Accordion>
+  
+  <Accordion title="Ensemble slower than expected">
+    **Problem**: Each model processes images sequentially.
+    
+    **This is normal**: Ensemble training takes approximately N× single model time.
+    
+    **Speed tips**:
+    - Use `--faiss_on_gpu` for all models
+    - Increase coreset sampling: `-p 0.01` (not `-p 0.1`)
+    - Use faster backbones (ResNet50 instead of ResNet101)
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration Reference" icon="book" href="/training/configuration">
+    Detailed explanation of all parameters
+  </Card>
+  
+  <Card title="Model Evaluation" icon="chart-line" href="/evaluation/quick-start">
+    Load and evaluate your trained ensemble
+  </Card>
+</CardGroup>

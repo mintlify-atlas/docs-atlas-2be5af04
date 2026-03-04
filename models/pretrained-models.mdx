@@ -1,0 +1,219 @@
+---
+title: 'Pretrained Models'
+description: 'Download and use pretrained PatchCore models for MVTec AD industrial anomaly detection'
+icon: 'download'
+---
+
+## Overview
+
+This repository provides pretrained PatchCore models that achieve state-of-the-art performance on MVTec AD, with up to **99.6% image-level AUROC**, **98.4% pixel-level AUROC**, and **>95% PRO score**.
+
+Each model is trained on one of the 15 MVTec AD subdatasets and can be directly loaded for inference without retraining.
+
+## Available Model Configurations
+
+<CardGroup cols={2}>
+  <Card title="WideResNet50 Baseline" icon="chart-line">
+    Standard single-backbone model optimized for 224x224 images
+    
+    - **Image AUROC**: 99.2%
+    - **Pixel AUROC**: 98.1%
+    - **PRO Score**: 94.4%
+  </Card>
+  
+  <Card title="Ensemble Model" icon="layer-group">
+    Multi-backbone ensemble with WR101/ResNext101/DenseNet201
+    
+    - **Image AUROC**: 99.6%
+    - **Pixel AUROC**: 98.2%
+    - **PRO Score**: 94.9%
+  </Card>
+</CardGroup>
+
+## Model Structure
+
+Pretrained models are organized in the following directory structure:
+
+```
+models/
+├── IM224_WR50_L2-3_P01_D1024-1024_PS-3_AN-1/
+│   └── models/
+│       ├── mvtec_bottle/
+│       │   ├── nnscorer_search_index.faiss
+│       │   └── patchcore_params.pkl
+│       ├── mvtec_cable/
+│       ├── mvtec_capsule/
+│       └── ... (15 categories total)
+├── IM224_Ensemble_L2-3_P001_D1024-384_PS-3_AN-1/
+│   └── models/
+│       └── ... (same 15 categories)
+```
+
+### Model Files
+
+Each category model contains two files:
+
+- `nnscorer_search_index.faiss` - FAISS index for nearest neighbor search
+- `patchcore_params.pkl` - Serialized PatchCore parameters and memory bank
+
+## MVTec AD Categories
+
+Pretrained models are available for all 15 MVTec AD object and texture categories:
+
+**Object Categories:**
+- bottle
+- cable
+- capsule
+- hazelnut
+- metal_nut
+- pill
+- screw
+- toothbrush
+- transistor
+- zipper
+
+**Texture Categories:**
+- carpet
+- grid
+- leather
+- tile
+- wood
+
+## Loading Pretrained Models
+
+### Evaluation Script
+
+Use the provided evaluation script to load and test pretrained models:
+
+```bash
+datapath=/path/to/mvtec/data
+loadpath=/path/to/pretrained/models
+modelfolder=IM224_WR50_L2-3_P001_D1024-1024_PS-3_AN-1
+savefolder=evaluated_results/$modelfolder
+
+datasets=('bottle' 'cable' 'capsule' 'carpet' 'grid' 'hazelnut' \
+          'leather' 'metal_nut' 'pill' 'screw' 'tile' 'toothbrush' \
+          'transistor' 'wood' 'zipper')
+
+dataset_flags=($(for dataset in "${datasets[@]}"; do echo '-d '$dataset; done))
+model_flags=($(for dataset in "${datasets[@]}"; do echo '-p '$loadpath'/'$modelfolder'/models/mvtec_'$dataset; done))
+
+python bin/load_and_evaluate_patchcore.py --gpu 0 --seed 0 $savefolder \
+  patch_core_loader "${model_flags[@]}" --faiss_on_gpu \
+  dataset --resize 366 --imagesize 320 "${dataset_flags[@]}" mvtec $datapath
+```
+
+### Loading Individual Models
+
+To load a single category model:
+
+```bash
+python bin/load_and_evaluate_patchcore.py --gpu 0 --seed 0 results \
+  patch_core_loader -p models/IM224_WR50_L2-3_P01_D1024-1024_PS-3_AN-1/models/mvtec_bottle \
+  --faiss_on_gpu \
+  dataset --resize 366 --imagesize 320 -d bottle mvtec /path/to/mvtec
+```
+
+## Model Configurations
+
+### WideResNet50 Baseline (IM224)
+
+**Configuration:**
+- Backbone: Wide ResNet-50
+- Feature layers: layer2, layer3
+- Input size: 224x224 (resized from 256x256)
+- Coreset sampling: 10%
+- Embedding dimensions: 1024 → 1024
+- Patch size: 3
+- Nearest neighbors: 1
+
+**Model ID:** `IM224_WR50_L2-3_P01_D1024-1024_PS-3_AN-1`
+
+### Ensemble Model (IM224)
+
+**Configuration:**
+- Backbones: Wide ResNet-101, ResNeXt-101, DenseNet-201
+- Feature layers:
+  - WR101: layer2, layer3
+  - ResNeXt101: layer2, layer3
+  - DenseNet201: denseblock2, denseblock3
+- Input size: 224x224
+- Coreset sampling: 1%
+- Embedding dimensions: 1024 → 384
+- Patch size: 3
+- Nearest neighbors: 1
+
+**Model ID:** `IM224_Ensemble_L2-3_P001_D1024-384_PS-3_AN-1`
+
+### Higher Resolution Models (IM320)
+
+Models trained on 320x320 images achieve similar or better performance:
+
+- **WR50 (IM320)**: 99.3% Image AUROC, 97.8% Pixel AUROC
+- **Ensemble (IM320)**: 99.6% Image AUROC, 98.2% Pixel AUROC
+
+<Note>
+  Higher resolution models (320x320) require more GPU memory but can provide better localization accuracy.
+</Note>
+
+## Inference Requirements
+
+### Hardware
+
+- **GPU Memory**: 11GB recommended (varies with image size)
+- **GPU**: CUDA-compatible GPU for FAISS acceleration
+- **CPU**: Any modern multi-core processor
+
+### Software Dependencies
+
+```bash
+pip install torch torchvision
+pip install faiss-gpu  # or faiss-cpu
+pip install timm
+pip install scikit-learn
+pip install Pillow
+```
+
+See `requirements.txt` for complete dependency list.
+
+## Model Performance
+
+For detailed per-category performance metrics, see the [Performance Benchmarks](/models/performance-benchmarks) page.
+
+## Training Custom Models
+
+To train your own PatchCore model with the same configuration:
+
+```bash
+python bin/run_patchcore.py --gpu 0 --seed 0 --save_patchcore_model \
+  --log_group IM224_WR50_L2-3_P01_D1024-1024_PS-3_AN-1_S0 \
+  --log_project MVTecAD_Results results \
+  patch_core -b wideresnet50 -le layer2 -le layer3 --faiss_on_gpu \
+  --pretrain_embed_dimension 1024 --target_embed_dimension 1024 \
+  --anomaly_scorer_num_nn 1 --patchsize 3 \
+  sampler -p 0.1 approx_greedy_coreset \
+  dataset --resize 256 --imagesize 224 -d bottle mvtec /path/to/mvtec
+```
+
+See [Training Guide](/usage/training) for complete training instructions.
+
+## Output Format
+
+After evaluation, results are saved as:
+
+```
+evaluated_results/
+├── results.csv           # Performance metrics for all categories
+└── segmentation_images/  # Visual anomaly maps (if enabled)
+```
+
+The `results.csv` contains:
+- `instance_auroc` - Image-level AUROC
+- `full_pixel_auroc` - Pixel-level AUROC
+- `full_pro` - PRO score
+- `anomaly_pixel_auroc` - AUROC on anomalous pixels only
+- `anomaly_pro` - PRO on anomalous regions only
+
+<Note>
+  All pretrained models use ImageNet-pretrained backbone weights for feature extraction.
+</Note>

@@ -1,0 +1,333 @@
+---
+title: "Installation"
+description: "Complete installation guide for PatchCore industrial anomaly detection"
+---
+
+This guide covers everything you need to install and configure PatchCore for industrial anomaly detection.
+
+## System Requirements
+
+<CardGroup cols={2}>
+  <Card title="Python Version" icon="python">
+    **Python 3.8 or higher**
+    
+    Results were computed using Python 3.8
+  </Card>
+  <Card title="GPU Memory" icon="microchip">
+    **11GB VRAM minimum**
+    
+    Required for most experiments at standard image sizes
+  </Card>
+  <Card title="Operating System" icon="desktop">
+    **Linux (recommended)**
+    
+    Also works on macOS and Windows with WSL2
+  </Card>
+  <Card title="CUDA Support" icon="bolt">
+    **CUDA 10.2 or higher**
+    
+    Optional but strongly recommended for GPU acceleration
+  </Card>
+</CardGroup>
+
+<Warning>
+Larger input images will require more GPU memory. If you plan to use 320x320 images or larger, ensure you have at least 16GB of VRAM.
+</Warning>
+
+## Installation Steps
+
+<Steps>
+  <Step title="Clone the Repository">
+    First, clone the PatchCore repository:
+    
+    ```bash
+    git clone https://github.com/amazon-science/patchcore-inspection.git
+    cd patchcore-inspection
+    ```
+  </Step>
+
+  <Step title="Create Virtual Environment (Recommended)">
+    Create an isolated Python environment:
+    
+    <CodeGroup>
+    ```bash venv
+    python -m venv patchcore-env
+    source patchcore-env/bin/activate  # On Linux/macOS
+    # or
+    patchcore-env\Scripts\activate  # On Windows
+    ```
+    
+    ```bash conda
+    conda create -n patchcore python=3.8
+    conda activate patchcore
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Install Core Dependencies">
+    Install all required packages from `requirements.txt`:
+    
+    ```bash
+    pip install -r requirements.txt
+    ```
+    
+    This installs:
+    
+    <AccordionGroup>
+      <Accordion title="Core Dependencies">
+      - **click >= 8.0.3**: Command-line interface framework
+      - **torch >= 1.10.0**: PyTorch deep learning framework
+      - **torchvision >= 0.11.1**: Pre-trained models and image transforms
+      - **pretrainedmodels >= 0.7.4**: Additional backbone architectures
+      </Accordion>
+      
+      <Accordion title="Scientific Computing">
+      - **scikit-image >= 0.18.3**: Image processing
+      - **scikit-learn >= 1.0.1**: Machine learning utilities
+      - **scipy >= 1.7.1**: Scientific computing
+      - **numpy**: Numerical operations (installed as dependency)
+      </Accordion>
+      
+      <Accordion title="Visualization & Utilities">
+      - **matplotlib >= 3.5.0**: Plotting and visualization
+      - **pillow >= 8.4.0**: Image loading and processing
+      - **tqdm >= 4.62.3**: Progress bars
+      </Accordion>
+      
+      <Accordion title="Similarity Search">
+      - **faiss-cpu**: CPU-based similarity search (default)
+      - **faiss-gpu**: GPU-accelerated similarity search (optional)
+      </Accordion>
+    </AccordionGroup>
+  </Step>
+
+  <Step title="Choose FAISS Backend">
+    By default, `requirements.txt` installs `faiss-cpu`. For significantly faster training and inference, install the GPU version:
+    
+    <CodeGroup>
+    ```bash GPU (Recommended)
+    pip uninstall faiss-cpu -y
+    pip install faiss-gpu
+    ```
+    
+    ```bash CPU (Default)
+    # Already installed via requirements.txt
+    # Use this if you don't have a CUDA-compatible GPU
+    ```
+    </CodeGroup>
+    
+    <Note>
+    **GPU vs CPU Performance:**
+    - **faiss-gpu**: 10-50x faster similarity search, requires CUDA
+    - **faiss-cpu**: Works everywhere but significantly slower
+    
+    When using CPU FAISS, remove the `--faiss_on_gpu` flag from training commands.
+    </Note>
+  </Step>
+
+  <Step title="Set PYTHONPATH">
+    PatchCore requires the `src` directory to be in your Python path:
+    
+    <CodeGroup>
+    ```bash Linux/macOS (Temporary)
+    export PYTHONPATH=src:$PYTHONPATH
+    ```
+    
+    ```bash Linux/macOS (Permanent)
+    echo 'export PYTHONPATH="'$(pwd)'/src:$PYTHONPATH"' >> ~/.bashrc
+    source ~/.bashrc
+    ```
+    
+    ```bash Windows PowerShell
+    $env:PYTHONPATH="src;$env:PYTHONPATH"
+    ```
+    </CodeGroup>
+    
+    <Accordion title="Alternative: Use env prefix">
+    Instead of setting PYTHONPATH globally, you can prefix each command:
+    ```bash
+    env PYTHONPATH=src python bin/run_patchcore.py ...
+    ```
+    </Accordion>
+  </Step>
+
+  <Step title="Verify Installation">
+    Test that all dependencies are correctly installed:
+    
+    ```bash
+    python -c "import torch; import patchcore; print('✓ Installation successful!')"
+    ```
+    
+    Check PyTorch CUDA availability:
+    
+    ```bash
+    python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+    ```
+    
+    Expected output:
+    ```
+    CUDA available: True
+    ```
+  </Step>
+</Steps>
+
+## Optional: Install from setup.py
+
+For a more permanent installation, you can install PatchCore as a package:
+
+```bash
+pip install -e .
+```
+
+This uses the `setup.py` file which:
+- Installs all dependencies from `requirements.txt`
+- Makes the `patchcore` package importable from anywhere
+- Allows editable development (`-e` flag)
+
+<Accordion title="View setup.py">
+```python
+from pathlib import Path
+from setuptools import find_packages, setup
+
+package_path = Path(__file__).parent
+version_path = Path(__file__).parent.joinpath(f"src/patchcore/VERSION")
+version = version_path.read_text().strip()
+install_requires = (
+    Path(__file__).parent.joinpath("requirements.txt").read_text().splitlines()
+)
+
+setup(
+    name="patchcore",
+    version=version,
+    install_requires=install_requires,
+    package_dir={"": "src"},
+    packages=find_packages("src"),
+    include_package_data=True,
+)
+```
+</Accordion>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="ImportError: No module named 'patchcore'">
+    **Solution:** Make sure `PYTHONPATH` is set correctly:
+    ```bash
+    export PYTHONPATH=src:$PYTHONPATH
+    ```
+    Or run commands from the repository root with the prefix:
+    ```bash
+    env PYTHONPATH=src python bin/run_patchcore.py ...
+    ```
+  </Accordion>
+  
+  <Accordion title="CUDA out of memory">
+    **Solution:** Reduce memory usage by:
+    1. Using smaller image sizes: `--imagesize 192` instead of `--imagesize 224`
+    2. Reducing batch size: `--batch_size 1`
+    3. Using smaller coreset percentage: `-p 0.01` instead of `-p 0.1`
+    4. Using CPU FAISS (slower but uses less GPU memory)
+  </Accordion>
+  
+  <Accordion title="FAISS installation issues">
+    **Problem:** `faiss-gpu` fails to install
+    
+    **Solution:** Try installing via conda:
+    ```bash
+    conda install -c pytorch faiss-gpu
+    ```
+    
+    Or fall back to CPU version:
+    ```bash
+    pip install faiss-cpu
+    ```
+  </Accordion>
+  
+  <Accordion title="PyTorch CUDA version mismatch">
+    **Problem:** PyTorch doesn't detect your GPU
+    
+    **Solution:** Install PyTorch matching your CUDA version:
+    ```bash
+    # For CUDA 11.8
+    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+    
+    # For CUDA 12.1
+    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+    ```
+    
+    Check your CUDA version:
+    ```bash
+    nvcc --version
+    ```
+  </Accordion>
+  
+  <Accordion title="Permission denied errors">
+    **Solution:** Don't run pip with sudo. Use a virtual environment or:
+    ```bash
+    pip install --user -r requirements.txt
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Hardware Recommendations
+
+<CardGroup cols={3}>
+  <Card title="Minimum" icon="gauge-min">
+    - **GPU:** GTX 1080 Ti (11GB)
+    - **CPU:** 4 cores
+    - **RAM:** 16GB
+    - **Storage:** 10GB
+  </Card>
+  
+  <Card title="Recommended" icon="gauge">
+    - **GPU:** RTX 3090 (24GB)
+    - **CPU:** 8+ cores
+    - **RAM:** 32GB
+    - **Storage:** 50GB
+  </Card>
+  
+  <Card title="Multi-Dataset" icon="gauge-max">
+    - **GPU:** A100 (40GB)
+    - **CPU:** 16+ cores  
+    - **RAM:** 64GB
+    - **Storage:** 100GB
+  </Card>
+</CardGroup>
+
+## Verify GPU Setup
+
+Run this diagnostic script to check your setup:
+
+```python
+import torch
+import sys
+
+print(f"Python version: {sys.version}")
+print(f"PyTorch version: {torch.__version__}")
+print(f"CUDA available: {torch.cuda.is_available()}")
+
+if torch.cuda.is_available():
+    print(f"CUDA version: {torch.version.cuda}")
+    print(f"GPU count: {torch.cuda.device_count()}")
+    print(f"GPU name: {torch.cuda.get_device_name(0)}")
+    print(f"GPU memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
+else:
+    print("⚠️  No GPU detected. Training will be slow.")
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+    Train your first model in minutes
+  </Card>
+  <Card title="Dataset Setup" icon="database" href="/training/mvtec-setup">
+    Prepare the MVTec AD dataset
+  </Card>
+  <Card title="Configuration" icon="gear" href="/training/configuration">
+    Understand all training parameters
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/patchcore">
+    Explore the PatchCore API
+  </Card>
+</CardGroup>

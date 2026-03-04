@@ -1,0 +1,188 @@
+---
+title: Loading Saved Models
+description: Load trained PatchCore models from disk for evaluation and inference
+---
+
+## Overview
+
+PatchCore models can be saved after training and loaded later for evaluation or inference on new data. The saved model includes the FAISS nearest-neighbor search index and model configuration parameters.
+
+## Model Structure
+
+When a PatchCore model is saved using `--save_patchcore_model`, it creates the following structure:
+
+```bash
+models/
+└── mvtec_bottle/
+    ├── nnscorer_search_index.faiss  # FAISS index with training features
+    └── patchcore_params.pkl          # Model configuration parameters
+```
+
+<Note>
+The `.faiss` file contains the memory bank of patch features from training data. The `.pkl` file stores backbone architecture, layer names, dimensions, and other hyperparameters.
+</Note>
+
+## Loading a Single Model
+
+To load a pretrained PatchCore model, use the `load_from_path()` method:
+
+```python
+import torch
+import patchcore.patchcore
+import patchcore.common
+
+# Set device
+device = torch.device("cuda:0")
+
+# Initialize FAISS nearest neighbor method
+nn_method = patchcore.common.FaissNN(
+    on_gpu=True,      # Use GPU for FAISS searches
+    num_workers=8     # Number of threads for FAISS
+)
+
+# Create PatchCore instance and load from path
+patchcore_model = patchcore.patchcore.PatchCore(device)
+patchcore_model.load_from_path(
+    load_path="results/models/mvtec_bottle",
+    device=device,
+    nn_method=nn_method
+)
+```
+
+<Steps>
+  <Step title="Initialize the device">
+    Set up the PyTorch device (CPU or CUDA) where the model will run.
+  </Step>
+  
+  <Step title="Configure FAISS method">
+    Create a `FaissNN` instance with GPU acceleration if available. This handles nearest-neighbor searches in the feature space.
+  </Step>
+  
+  <Step title="Load model parameters">
+    Call `load_from_path()` which automatically reads both the FAISS index and pickled parameters.
+  </Step>
+</Steps>
+
+## What Gets Loaded
+
+The `load_from_path()` method restores the complete model state:
+
+<Accordion title="Model Parameters (from patchcore_params.pkl)">
+  ```python
+  {
+      "backbone.name": "wideresnet50",
+      "layers_to_extract_from": ["layer2", "layer3"],
+      "input_shape": [3, 224, 224],
+      "pretrain_embed_dimension": 1024,
+      "target_embed_dimension": 1024,
+      "patchsize": 3,
+      "patchstride": 1,
+      "anomaly_scorer_num_nn": 1
+  }
+  ```
+  
+  These parameters fully specify the model architecture and feature extraction configuration.
+</Accordion>
+
+<Accordion title="Feature Memory Bank (from nnscorer_search_index.faiss)">
+  The FAISS index contains:
+  - Coreset-subsampled patch features from training images
+  - Optimized data structure for fast nearest-neighbor search
+  - Typically 10% of original features after greedy coreset sampling
+</Accordion>
+
+## Loading Model Ensembles
+
+PatchCore supports ensemble models for improved performance. When multiple models are saved, they use a prepend naming scheme:
+
+```python
+import os
+import gc
+
+load_path = "results/models/mvtec_bottle"
+device = torch.device("cuda:0")
+
+# Count the number of ensemble models
+n_models = len([x for x in os.listdir(load_path) if ".faiss" in x])
+
+loaded_models = []
+for i in range(n_models):
+    nn_method = patchcore.common.FaissNN(on_gpu=True, num_workers=8)
+    patchcore_instance = patchcore.patchcore.PatchCore(device)
+    
+    # Load with ensemble-specific prepend
+    patchcore_instance.load_from_path(
+        load_path=load_path,
+        device=device,
+        nn_method=nn_method,
+        prepend=f"Ensemble-{i+1}-{n_models}_"
+    )
+    loaded_models.append(patchcore_instance)
+```
+
+<Warning>
+Each ensemble member requires its own FAISS index in GPU memory. Ensure sufficient GPU memory is available when loading multiple models.
+</Warning>
+
+## Memory Management
+
+When working with multiple models or datasets, proper memory management is crucial:
+
+```python
+import gc
+import torch
+
+# Clear GPU cache before loading
+torch.cuda.empty_cache()
+
+# Load and use model
+patchcore_model.load_from_path(...)
+scores, masks, _, _ = patchcore_model.predict(test_dataloader)
+
+# Clean up after use
+del patchcore_model
+gc.collect()
+torch.cuda.empty_cache()
+```
+
+## Implementation Details
+
+The `load_from_path()` method (source:patchcore.py:256):
+
+```python
+def load_from_path(
+    self,
+    load_path: str,
+    device: torch.device,
+    nn_method: patchcore.common.FaissNN,
+    prepend: str = "",
+) -> None:
+    LOGGER.info("Loading and initializing PatchCore.")
+    with open(self._params_file(load_path, prepend), "rb") as load_file:
+        patchcore_params = pickle.load(load_file)
+    patchcore_params["backbone"] = patchcore.backbones.load(
+        patchcore_params["backbone.name"]
+    )
+    patchcore_params["backbone"].name = patchcore_params["backbone.name"]
+    del patchcore_params["backbone.name"]
+    self.load(**patchcore_params, device=device, nn_method=nn_method)
+    
+    self.anomaly_scorer.load(load_path, prepend)
+```
+
+This method:
+1. Loads pickled parameters from `patchcore_params.pkl`
+2. Reconstructs the backbone network from the saved name
+3. Initializes all forward modules (feature aggregator, preprocessing, etc.)
+4. Loads the FAISS index into the anomaly scorer
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Run Evaluation" icon="chart-line" href="/inference/evaluation">
+    Evaluate loaded models on test datasets and compute metrics
+  </Card>
+  <Card title="Batch Prediction" icon="images" href="/inference/batch-prediction">
+    Run inference on multiple images using DataLoaders
+  </Card>
+</CardGroup>

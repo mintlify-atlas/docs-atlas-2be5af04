@@ -1,122 +1,106 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "PatchCore Industrial Anomaly Detection",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#b21e1e",
+    "light": "#e59f82",
+    "dark": "#e0dbd9"
   },
-  "favicon": "/favicon.svg",
+  "logo": {
+    "light": "https://media.brand.dev/457a7a69-4f88-463e-be65-35570d832fb3.png",
+    "dark": "https://media.brand.dev/457a7a69-4f88-463e-be65-35570d832fb3.png"
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/amazon-science/patchcore-inspection"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/amazon-science/patchcore-inspection"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
+              "introduction",
               "quickstart",
-              "development"
+              "installation"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/patchcore-algorithm",
+              "concepts/feature-extraction",
+              "concepts/coreset-sampling",
+              "concepts/anomaly-scoring"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Training",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "training/overview",
+              "training/mvtec-setup",
+              "training/single-model",
+              "training/ensemble-models",
+              "training/configuration"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Inference",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "inference/loading-models",
+              "inference/evaluation",
+              "inference/batch-prediction"
+            ]
+          },
+          {
+            "group": "Model Zoo",
+            "pages": [
+              "models/pretrained-models",
+              "models/backbones",
+              "models/performance-benchmarks"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Core Components",
             "pages": [
-              "api-reference/introduction"
+              "api/patchcore",
+              "api/backbones",
+              "api/sampler",
+              "api/metrics"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Utilities",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/datasets",
+              "api/common",
+              "api/utils"
+            ]
+          },
+          {
+            "group": "CLI Tools",
+            "pages": [
+              "api/run-patchcore",
+              "api/load-and-evaluate"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

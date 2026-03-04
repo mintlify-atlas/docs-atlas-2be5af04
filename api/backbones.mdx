@@ -1,0 +1,297 @@
+---
+title: 'Backbones'
+description: 'Pre-trained neural network backbones for feature extraction'
+icon: 'network-wired'
+---
+
+## Overview
+
+The `backbones` module provides access to a wide variety of pre-trained neural network architectures for feature extraction in PatchCore. These backbones are loaded with ImageNet pre-trained weights.
+
+## Functions
+
+### load
+
+```python
+def load(name: str) -> torch.nn.Module
+```
+
+Loads a pre-trained backbone network by name.
+
+<ParamField path="name" type="str" required>
+  Name of the backbone architecture to load. See [Available Backbones](#available-backbones) for the complete list.
+</ParamField>
+
+#### Returns
+
+<ResponseField name="backbone" type="torch.nn.Module">
+  Pre-trained PyTorch model loaded with ImageNet weights.
+</ResponseField>
+
+#### Example
+
+```python
+import patchcore.backbones
+
+# Load WideResNet50 backbone
+backbone = patchcore.backbones.load("wideresnet50")
+
+# Load ResNet50 backbone
+backbone = patchcore.backbones.load("resnet50")
+
+# Load Vision Transformer
+backbone = patchcore.backbones.load("vit_base")
+```
+
+---
+
+## Available Backbones
+
+The following pre-trained backbones are available:
+
+### ResNet Family
+
+<ParamField path="resnet50" type="str">
+  ResNet-50 architecture from torchvision
+</ParamField>
+
+<ParamField path="resnet101" type="str">
+  ResNet-101 architecture from torchvision
+</ParamField>
+
+<ParamField path="resnet200" type="str">
+  ResNet-200 architecture from timm
+</ParamField>
+
+<ParamField path="resnext101" type="str">
+  ResNeXt-101 (32x8d) architecture from torchvision
+</ParamField>
+
+<ParamField path="resnest50" type="str">
+  ResNeSt-50 (4s2x40d) architecture from timm
+</ParamField>
+
+### Wide ResNet Family
+
+<ParamField path="wideresnet50" type="str">
+  Wide ResNet-50-2 architecture from torchvision. **Recommended for PatchCore.**
+</ParamField>
+
+<ParamField path="wideresnet101" type="str">
+  Wide ResNet-101-2 architecture from torchvision
+</ParamField>
+
+### ResNetV2 (BiT) Family
+
+<ParamField path="resnetv2_50_bit" type="str">
+  ResNetV2-50x3 trained with Big Transfer (BiT) on ImageNet-1k
+</ParamField>
+
+<ParamField path="resnetv2_50_21k" type="str">
+  ResNetV2-50x3 trained with BiT on ImageNet-21k
+</ParamField>
+
+<ParamField path="resnetv2_101_bit" type="str">
+  ResNetV2-101x3 trained with BiT on ImageNet-1k
+</ParamField>
+
+<ParamField path="resnetv2_101_21k" type="str">
+  ResNetV2-101x3 trained with BiT on ImageNet-21k
+</ParamField>
+
+<ParamField path="resnetv2_101" type="str">
+  ResNetV2-101 standard architecture
+</ParamField>
+
+<ParamField path="resnetv2_152_bit" type="str">
+  ResNetV2-152x4 trained with BiT on ImageNet-1k
+</ParamField>
+
+<ParamField path="resnetv2_152_21k" type="str">
+  ResNetV2-152x4 trained with BiT on ImageNet-21k
+</ParamField>
+
+<ParamField path="resnetv2_152_384" type="str">
+  ResNetV2-152x2 teacher model with 384x384 input resolution
+</ParamField>
+
+### VGG Family
+
+<ParamField path="vgg11" type="str">
+  VGG-11 architecture from torchvision
+</ParamField>
+
+<ParamField path="vgg19" type="str">
+  VGG-19 architecture from torchvision
+</ParamField>
+
+<ParamField path="vgg19_bn" type="str">
+  VGG-19 with batch normalization from torchvision
+</ParamField>
+
+### AlexNet
+
+<ParamField path="alexnet" type="str">
+  AlexNet architecture from torchvision
+</ParamField>
+
+### DenseNet Family
+
+<ParamField path="densenet121" type="str">
+  DenseNet-121 architecture from timm
+</ParamField>
+
+<ParamField path="densenet201" type="str">
+  DenseNet-201 architecture from timm
+</ParamField>
+
+### EfficientNet Family
+
+<ParamField path="efficientnet_b1" type="str">
+  EfficientNet-B1 (TensorFlow weights) from timm
+</ParamField>
+
+<ParamField path="efficientnet_b3" type="str">
+  EfficientNet-B3 (TensorFlow weights) from timm
+</ParamField>
+
+<ParamField path="efficientnet_b3a" type="str">
+  EfficientNet-B3a architecture from timm
+</ParamField>
+
+<ParamField path="efficientnet_b5" type="str">
+  EfficientNet-B5 (TensorFlow weights) from timm
+</ParamField>
+
+<ParamField path="efficientnet_b7" type="str">
+  EfficientNet-B7 (TensorFlow weights) from timm
+</ParamField>
+
+<ParamField path="efficientnetv2_m" type="str">
+  EfficientNetV2-M (TensorFlow weights) from timm
+</ParamField>
+
+<ParamField path="efficientnetv2_l" type="str">
+  EfficientNetV2-L (TensorFlow weights) from timm
+</ParamField>
+
+### MNASNet Family
+
+<ParamField path="mnasnet_100" type="str">
+  MNASNet 1.0 architecture from timm
+</ParamField>
+
+<ParamField path="mnasnet_a1" type="str">
+  MNASNet-A1 architecture from timm
+</ParamField>
+
+<ParamField path="mnasnet_b1" type="str">
+  MNASNet-B1 architecture from timm
+</ParamField>
+
+### Vision Transformer (ViT) Family
+
+<ParamField path="vit_small" type="str">
+  Vision Transformer Small with 16x16 patches (224x224 input)
+</ParamField>
+
+<ParamField path="vit_base" type="str">
+  Vision Transformer Base with 16x16 patches (224x224 input)
+</ParamField>
+
+<ParamField path="vit_large" type="str">
+  Vision Transformer Large with 16x16 patches (224x224 input)
+</ParamField>
+
+<ParamField path="vit_r50" type="str">
+  Vision Transformer Large with ResNet-50 hybrid backbone
+</ParamField>
+
+### DeiT Family
+
+<ParamField path="vit_deit_base" type="str">
+  Data-efficient Image Transformer (DeiT) Base with 16x16 patches
+</ParamField>
+
+<ParamField path="vit_deit_distilled" type="str">
+  DeiT Base with distillation token (16x16 patches)
+</ParamField>
+
+### Swin Transformer Family
+
+<ParamField path="vit_swin_base" type="str">
+  Swin Transformer Base with 4x4 patches and 7x7 window size
+</ParamField>
+
+<ParamField path="vit_swin_large" type="str">
+  Swin Transformer Large with 4x4 patches and 7x7 window size
+</ParamField>
+
+### Inception
+
+<ParamField path="inception_v4" type="str">
+  Inception-V4 architecture from timm
+</ParamField>
+
+### BN-Inception
+
+<ParamField path="bninception" type="str">
+  Batch Normalized Inception trained on ImageNet (requires pretrainedmodels package)
+</ParamField>
+
+---
+
+## Usage with PatchCore
+
+```python
+import torch
+import patchcore.backbones
+from patchcore import PatchCore
+
+# Initialize device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Load backbone
+backbone = patchcore.backbones.load("wideresnet50")
+
+# Create PatchCore model
+model = PatchCore(device)
+model.load(
+    backbone=backbone,
+    layers_to_extract_from=["layer2", "layer3"],
+    device=device,
+    input_shape=(3, 224, 224),
+    pretrain_embed_dimension=1024,
+    target_embed_dimension=1024
+)
+```
+
+<Note>
+  **Recommended Backbone**: The original PatchCore paper uses `wideresnet50` with features extracted from `layer2` and `layer3`, which provides excellent performance for most industrial anomaly detection tasks.
+</Note>
+
+---
+
+## Backbone Registry
+
+The complete mapping of backbone names to their implementations is stored in the `_BACKBONES` dictionary:
+
+```python
+_BACKBONES = {
+    "alexnet": "models.alexnet(pretrained=True)",
+    "resnet50": "models.resnet50(pretrained=True)",
+    "wideresnet50": "models.wide_resnet50_2(pretrained=True)",
+    "vit_base": 'timm.create_model("vit_base_patch16_224", pretrained=True)',
+    # ... and many more
+}
+```
+
+### Dependencies
+
+- **torchvision**: For ResNet, VGG, AlexNet, and Wide ResNet models
+- **timm**: For Vision Transformers, EfficientNets, and many other architectures
+- **pretrainedmodels** (optional): For BN-Inception
+
+<Note>
+  All backbones are loaded with pre-trained weights. The `pretrained=True` parameter ensures that ImageNet weights are used, which is crucial for transfer learning in anomaly detection.
+</Note>

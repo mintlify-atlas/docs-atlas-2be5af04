@@ -1,0 +1,242 @@
+---
+title: 'datasets'
+description: 'MVTec dataset loader and preprocessing utilities'
+icon: 'database'
+---
+
+## Overview
+
+The `datasets` module provides PyTorch Dataset implementations for loading and preprocessing the MVTec Anomaly Detection dataset. It includes the `MVTecDataset` class for efficient data loading with built-in image transformations and train/test split handling.
+
+## Classes
+
+### MVTecDataset
+
+PyTorch Dataset implementation for the MVTec Anomaly Detection dataset.
+
+```python
+from patchcore.datasets.mvtec import MVTecDataset, DatasetSplit
+
+dataset = MVTecDataset(
+    source="/path/to/mvtec",
+    classname="bottle",
+    resize=256,
+    imagesize=224,
+    split=DatasetSplit.TRAIN
+)
+```
+
+#### Constructor Parameters
+
+<ParamField path="source" type="str" required>
+  Path to the MVTec data folder containing the dataset classes.
+</ParamField>
+
+<ParamField path="classname" type="str | None" required>
+  Name of the MVTec class to load (e.g., "bottle", "cable", "capsule"). If `None`, the dataset iterates over all 15 available classes.
+</ParamField>
+
+<ParamField path="resize" type="int" default="256">
+  Square size that loaded images are initially resized to before cropping.
+</ParamField>
+
+<ParamField path="imagesize" type="int" default="224">
+  Square size that resized images are center-cropped to. This is the final output dimension.
+</ParamField>
+
+<ParamField path="split" type="DatasetSplit" default="DatasetSplit.TRAIN">
+  Indicates whether to use training or test split. Options:
+  - `DatasetSplit.TRAIN` - Training images (only "good" samples)
+  - `DatasetSplit.VAL` - Validation split
+  - `DatasetSplit.TEST` - Test images with anomalies and ground truth masks
+</ParamField>
+
+<ParamField path="train_val_split" type="float" default="1.0">
+  Ratio for splitting training data into train/validation sets. Value of 1.0 uses all data for training.
+</ParamField>
+
+#### Methods
+
+##### `__getitem__(idx)`
+
+Retrieves a single sample from the dataset.
+
+<ParamField path="idx" type="int" required>
+  Index of the sample to retrieve.
+</ParamField>
+
+<ResponseField name="return" type="dict">
+  Dictionary containing:
+  - `image` (torch.Tensor): Preprocessed image tensor of shape (3, imagesize, imagesize)
+  - `mask` (torch.Tensor): Ground truth mask for test split, zero tensor for training
+  - `classname` (str): MVTec class name
+  - `anomaly` (str): Anomaly type (e.g., "good", "broken_large", "scratch")
+  - `is_anomaly` (int): Binary label (0 for "good", 1 for anomalous)
+  - `image_name` (str): Relative path of the image
+  - `image_path` (str): Full path to the image file
+</ResponseField>
+
+```python
+sample = dataset[0]
+image = sample['image']  # torch.Tensor (3, 224, 224)
+mask = sample['mask']    # torch.Tensor (1, 224, 224)
+is_anomaly = sample['is_anomaly']  # 0 or 1
+```
+
+##### `__len__()`
+
+Returns the total number of samples in the dataset.
+
+<ResponseField name="return" type="int">
+  Number of images in the dataset.
+</ResponseField>
+
+##### `get_image_data()`
+
+Internal method that scans the dataset directory and organizes image and mask paths.
+
+<ResponseField name="return" type="tuple">
+  Tuple of (imgpaths_per_class, data_to_iterate):
+  - `imgpaths_per_class` (dict): Nested dictionary mapping classname → anomaly type → list of image paths
+  - `data_to_iterate` (list): Flattened list of tuples (classname, anomaly, image_path, mask_path)
+</ResponseField>
+
+## Enums
+
+### DatasetSplit
+
+Enum for specifying dataset split mode.
+
+```python
+from patchcore.datasets.mvtec import DatasetSplit
+
+# Available options:
+DatasetSplit.TRAIN  # "train"
+DatasetSplit.VAL    # "val"
+DatasetSplit.TEST   # "test"
+```
+
+## Constants
+
+### Available Classes
+
+The MVTec dataset includes 15 object categories:
+
+```python
+_CLASSNAMES = [
+    "bottle", "cable", "capsule", "carpet", "grid",
+    "hazelnut", "leather", "metal_nut", "pill", "screw",
+    "tile", "toothbrush", "transistor", "wood", "zipper"
+]
+```
+
+### ImageNet Normalization
+
+Images are normalized using ImageNet statistics:
+
+```python
+IMAGENET_MEAN = [0.485, 0.456, 0.406]
+IMAGENET_STD = [0.229, 0.224, 0.225]
+```
+
+## Image Transformations
+
+The dataset applies the following preprocessing pipeline:
+
+**For Images:**
+1. Resize to specified `resize` dimension
+2. Center crop to `imagesize`
+3. Convert to tensor
+4. Normalize with ImageNet mean and std
+
+**For Masks (test split only):**
+1. Resize to specified `resize` dimension
+2. Center crop to `imagesize`
+3. Convert to tensor (no normalization)
+
+## Usage Example
+
+```python
+import torch
+from torch.utils.data import DataLoader
+from patchcore.datasets.mvtec import MVTecDataset, DatasetSplit
+
+# Create training dataset for "bottle" class
+train_dataset = MVTecDataset(
+    source="./datasets/mvtec",
+    classname="bottle",
+    resize=256,
+    imagesize=224,
+    split=DatasetSplit.TRAIN
+)
+
+# Create test dataset
+test_dataset = MVTecDataset(
+    source="./datasets/mvtec",
+    classname="bottle",
+    resize=256,
+    imagesize=224,
+    split=DatasetSplit.TEST
+)
+
+# Create DataLoaders
+train_loader = DataLoader(
+    train_dataset,
+    batch_size=32,
+    shuffle=True,
+    num_workers=4
+)
+
+test_loader = DataLoader(
+    test_dataset,
+    batch_size=32,
+    shuffle=False,
+    num_workers=4
+)
+
+# Iterate through batches
+for batch in train_loader:
+    images = batch['image']  # (batch_size, 3, 224, 224)
+    labels = batch['is_anomaly']  # (batch_size,)
+    # Training logic here...
+```
+
+## Multi-Class Loading
+
+Load all 15 classes simultaneously:
+
+```python
+# Pass None as classname to iterate over all classes
+full_dataset = MVTecDataset(
+    source="./datasets/mvtec",
+    classname=None,  # Load all classes
+    split=DatasetSplit.TRAIN
+)
+
+print(f"Total samples across all classes: {len(full_dataset)}")
+```
+
+## Train/Validation Split
+
+Split training data for validation:
+
+```python
+# Use 80% for training
+train_dataset = MVTecDataset(
+    source="./datasets/mvtec",
+    classname="bottle",
+    split=DatasetSplit.TRAIN,
+    train_val_split=0.8
+)
+
+# Use remaining 20% for validation
+val_dataset = MVTecDataset(
+    source="./datasets/mvtec",
+    classname="bottle",
+    split=DatasetSplit.VAL,
+    train_val_split=0.8
+)
+
+print(f"Train samples: {len(train_dataset)}")
+print(f"Val samples: {len(val_dataset)}")
+```

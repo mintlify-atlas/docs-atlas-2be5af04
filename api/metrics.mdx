@@ -1,0 +1,338 @@
+---
+title: 'Metrics'
+description: 'Evaluation metrics for anomaly detection performance'
+icon: 'chart-line'
+---
+
+## Overview
+
+The `metrics` module provides functions for evaluating anomaly detection performance at both the image level (classification) and pixel level (segmentation).
+
+---
+
+## Functions
+
+### compute_imagewise_retrieval_metrics
+
+```python
+def compute_imagewise_retrieval_metrics(
+    anomaly_prediction_weights,
+    anomaly_ground_truth_labels
+)
+```
+
+Computes image-level anomaly detection metrics including AUROC, FPR, TPR, and optimal thresholds.
+
+#### Parameters
+
+<ParamField path="anomaly_prediction_weights" type="np.array or list" required>
+  Array of anomaly scores for each image with shape `[N]`. Higher values indicate higher probability of being anomalous.
+</ParamField>
+
+<ParamField path="anomaly_ground_truth_labels" type="np.array or list" required>
+  Binary ground truth labels with shape `[N]`. Values are 1 for anomalous images and 0 for normal images.
+</ParamField>
+
+#### Returns
+
+<ResponseField name="auroc" type="float">
+  Area Under the Receiver Operating Characteristic curve. Values range from 0 to 1, where 1 is perfect classification.
+</ResponseField>
+
+<ResponseField name="fpr" type="np.ndarray">
+  False Positive Rate values at different thresholds.
+</ResponseField>
+
+<ResponseField name="tpr" type="np.ndarray">
+  True Positive Rate values at different thresholds.
+</ResponseField>
+
+<ResponseField name="threshold" type="np.ndarray">
+  Threshold values corresponding to each FPR/TPR pair.
+</ResponseField>
+
+#### Example
+
+```python
+import numpy as np
+from patchcore.metrics import compute_imagewise_retrieval_metrics
+
+# Simulate predictions and ground truth
+scores = np.array([0.1, 0.4, 0.9, 0.3, 0.8, 0.2])  # Predicted anomaly scores
+labels = np.array([0, 0, 1, 0, 1, 0])  # Ground truth (0=normal, 1=anomaly)
+
+metrics = compute_imagewise_retrieval_metrics(scores, labels)
+
+print(f"Image-level AUROC: {metrics['auroc']:.4f}")
+print(f"Number of threshold points: {len(metrics['threshold'])}")
+```
+
+#### Real-world Usage
+
+```python
+from torch.utils.data import DataLoader
+from patchcore import PatchCore
+from patchcore.metrics import compute_imagewise_retrieval_metrics
+
+# Load model and test data
+model = PatchCore(device)
+model.load_from_path("./models/trained", device, nn_method)
+test_loader = DataLoader(test_dataset, batch_size=32)
+
+# Get predictions
+scores, masks, labels_gt, masks_gt = model.predict(test_loader)
+
+# Compute image-level metrics
+image_metrics = compute_imagewise_retrieval_metrics(scores, labels_gt)
+
+print(f"Image AUROC: {image_metrics['auroc']:.4f}")
+```
+
+<Note>
+  **AUROC Interpretation**:
+  - **0.95-1.0**: Excellent detection performance
+  - **0.90-0.95**: Good detection performance
+  - **0.80-0.90**: Fair detection performance
+  - **Below 0.80**: Poor detection performance
+</Note>
+
+---
+
+### compute_pixelwise_retrieval_metrics
+
+```python
+def compute_pixelwise_retrieval_metrics(
+    anomaly_segmentations,
+    ground_truth_masks
+)
+```
+
+Computes pixel-level anomaly segmentation metrics including AUROC, optimal threshold, and false positive/negative rates.
+
+#### Parameters
+
+<ParamField path="anomaly_segmentations" type="list of np.ndarray or np.ndarray" required>
+  Predicted anomaly segmentation masks. Can be:
+  - List of arrays, each with shape `[H, W]`
+  - Single array with shape `[N, H, W]`
+  
+  Values should be continuous scores (not binary), typically in range [0, 1].
+</ParamField>
+
+<ParamField path="ground_truth_masks" type="list of np.ndarray or np.ndarray" required>
+  Ground truth segmentation masks with the same shape as predictions. Binary values where 1 indicates anomalous pixels and 0 indicates normal pixels.
+</ParamField>
+
+#### Returns
+
+<ResponseField name="auroc" type="float">
+  Pixel-level Area Under the ROC curve.
+</ResponseField>
+
+<ResponseField name="fpr" type="np.ndarray">
+  False Positive Rate values at different thresholds.
+</ResponseField>
+
+<ResponseField name="tpr" type="np.ndarray">
+  True Positive Rate values at different thresholds.
+</ResponseField>
+
+<ResponseField name="optimal_threshold" type="float">
+  Threshold that maximizes the F1 score, balancing precision and recall.
+</ResponseField>
+
+<ResponseField name="optimal_fpr" type="float">
+  False Positive Rate at the optimal threshold.
+</ResponseField>
+
+<ResponseField name="optimal_fnr" type="float">
+  False Negative Rate at the optimal threshold.
+</ResponseField>
+
+#### Example
+
+```python
+import numpy as np
+from patchcore.metrics import compute_pixelwise_retrieval_metrics
+
+# Simulate segmentation predictions and ground truth
+predictions = [
+    np.random.rand(224, 224),  # Continuous anomaly scores
+    np.random.rand(224, 224),
+    np.random.rand(224, 224)
+]
+
+ground_truth = [
+    np.random.randint(0, 2, (224, 224)),  # Binary masks
+    np.random.randint(0, 2, (224, 224)),
+    np.random.randint(0, 2, (224, 224))
+]
+
+metrics = compute_pixelwise_retrieval_metrics(predictions, ground_truth)
+
+print(f"Pixel-level AUROC: {metrics['auroc']:.4f}")
+print(f"Optimal threshold: {metrics['optimal_threshold']:.4f}")
+print(f"FPR at optimal threshold: {metrics['optimal_fpr']:.4f}")
+print(f"FNR at optimal threshold: {metrics['optimal_fnr']:.4f}")
+```
+
+#### Real-world Usage
+
+```python
+from torch.utils.data import DataLoader
+from patchcore import PatchCore
+from patchcore.metrics import compute_pixelwise_retrieval_metrics
+
+# Load model and test data
+model = PatchCore(device)
+model.load_from_path("./models/trained", device, nn_method)
+test_loader = DataLoader(test_dataset, batch_size=32)
+
+# Get predictions
+scores, masks, labels_gt, masks_gt = model.predict(test_loader)
+
+# Compute pixel-level metrics
+pixel_metrics = compute_pixelwise_retrieval_metrics(masks, masks_gt)
+
+print(f"Pixel AUROC: {pixel_metrics['auroc']:.4f}")
+print(f"Optimal threshold: {pixel_metrics['optimal_threshold']:.4f}")
+
+# Apply optimal threshold for binary segmentation
+import numpy as np
+threshold = pixel_metrics['optimal_threshold']
+binary_masks = [(mask >= threshold).astype(int) for mask in masks]
+```
+
+<Note>
+  **Optimal Threshold**: The returned optimal threshold maximizes the F1 score, which balances precision and recall. Use this threshold to convert continuous anomaly scores into binary segmentation masks.
+</Note>
+
+---
+
+## Complete Evaluation Example
+
+```python
+import torch
+from torch.utils.data import DataLoader
+from patchcore import PatchCore
+from patchcore.metrics import (
+    compute_imagewise_retrieval_metrics,
+    compute_pixelwise_retrieval_metrics
+)
+import patchcore.common
+
+# Initialize model
+device = torch.device("cuda")
+model = PatchCore(device)
+
+# Load trained model
+nn_method = patchcore.common.FaissNN(False, 4)
+model.load_from_path("./models/bottle", device, nn_method)
+
+# Prepare test data
+test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+
+# Get predictions
+print("Running inference...")
+scores, masks, labels_gt, masks_gt = model.predict(test_loader)
+
+# Compute image-level metrics
+print("\nImage-level Metrics:")
+image_metrics = compute_imagewise_retrieval_metrics(scores, labels_gt)
+print(f"  AUROC: {image_metrics['auroc']:.4f}")
+
+# Compute pixel-level metrics
+print("\nPixel-level Metrics:")
+pixel_metrics = compute_pixelwise_retrieval_metrics(masks, masks_gt)
+print(f"  AUROC: {pixel_metrics['auroc']:.4f}")
+print(f"  Optimal Threshold: {pixel_metrics['optimal_threshold']:.4f}")
+print(f"  FPR at optimal: {pixel_metrics['optimal_fpr']:.4f}")
+print(f"  FNR at optimal: {pixel_metrics['optimal_fnr']:.4f}")
+
+# Plot ROC curves (optional)
+import matplotlib.pyplot as plt
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+
+# Image-level ROC
+ax1.plot(image_metrics['fpr'], image_metrics['tpr'], linewidth=2)
+ax1.plot([0, 1], [0, 1], 'k--', linewidth=1)
+ax1.set_xlabel('False Positive Rate')
+ax1.set_ylabel('True Positive Rate')
+ax1.set_title(f'Image-level ROC (AUROC={image_metrics["auroc"]:.4f})')
+ax1.grid(True, alpha=0.3)
+
+# Pixel-level ROC
+ax2.plot(pixel_metrics['fpr'], pixel_metrics['tpr'], linewidth=2)
+ax2.plot([0, 1], [0, 1], 'k--', linewidth=1)
+ax2.set_xlabel('False Positive Rate')
+ax2.set_ylabel('True Positive Rate')
+ax2.set_title(f'Pixel-level ROC (AUROC={pixel_metrics["auroc"]:.4f})')
+ax2.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('roc_curves.png', dpi=150)
+plt.show()
+```
+
+---
+
+## Metric Definitions
+
+### AUROC (Area Under ROC Curve)
+
+The area under the Receiver Operating Characteristic curve, which plots True Positive Rate vs False Positive Rate at various thresholds.
+
+- **Range**: 0 to 1
+- **Perfect score**: 1.0 (all anomalies ranked higher than normal samples)
+- **Random classifier**: 0.5
+
+### True Positive Rate (TPR)
+
+Also called Recall or Sensitivity:
+
+```
+TPR = True Positives / (True Positives + False Negatives)
+```
+
+The proportion of actual anomalies correctly identified.
+
+### False Positive Rate (FPR)
+
+```
+FPR = False Positives / (False Positives + True Negatives)
+```
+
+The proportion of normal samples incorrectly classified as anomalies.
+
+### False Negative Rate (FNR)
+
+```
+FNR = False Negatives / (False Negatives + True Positives)
+```
+
+The proportion of anomalies that were missed (classified as normal).
+
+### F1 Score
+
+Harmonic mean of precision and recall:
+
+```
+F1 = 2 * (Precision * Recall) / (Precision + Recall)
+```
+
+The optimal threshold is chosen to maximize this metric.
+
+---
+
+## Dependencies
+
+The metrics module uses:
+
+- **numpy**: For array operations
+- **sklearn.metrics**: For ROC and precision-recall curve computation
+
+```python
+import numpy as np
+from sklearn import metrics
+```

@@ -1,0 +1,329 @@
+---
+title: 'Backbone Architectures'
+description: 'Complete reference of 40+ backbone networks available for PatchCore feature extraction'
+icon: 'network-wired'
+---
+
+## Overview
+
+PatchCore supports a wide range of pretrained CNN and Transformer backbone architectures for feature extraction. All backbones are pretrained on ImageNet and can be combined in ensembles for improved performance.
+
+## Selecting a Backbone
+
+Specify a backbone using the `-b` or `--backbone` flag:
+
+```bash
+python bin/run_patchcore.py ... \
+  patch_core -b wideresnet50 -le layer2 -le layer3 ...
+```
+
+For ensemble models, specify multiple backbones:
+
+```bash
+patch_core -b wideresnet101 -b resnext101 -b densenet201 \
+  -le 0.layer2 -le 0.layer3 -le 1.layer2 -le 1.layer3 \
+  -le 2.features.denseblock2 -le 2.features.denseblock3 ...
+```
+
+## Available Backbones
+
+All 40+ supported architectures are defined in `src/patchcore/backbones.py`.
+
+### ResNet Family
+
+Standard ResNet architectures from torchvision and timm.
+
+| Backbone Name | Architecture | Layers | Parameters | Source |
+|---------------|--------------|--------|------------|--------|
+| `resnet50` | ResNet-50 | 50 | 25.6M | torchvision |
+| `resnet101` | ResNet-101 | 101 | 44.5M | torchvision |
+| `resnext101` | ResNeXt-101-32x8d | 101 | 88.8M | torchvision |
+| `resnet200` | ResNet-200 | 200 | ~64M | timm |
+| `resnest50` | ResNeSt-50d | 50 | 27.5M | timm |
+
+**Common Feature Layers:** `layer1`, `layer2`, `layer3`, `layer4`
+
+### Wide ResNet
+
+**Recommended for baseline models** - excellent balance of performance and efficiency.
+
+| Backbone Name | Architecture | Width Multiplier | Parameters |
+|---------------|--------------|------------------|------------|
+| `wideresnet50` | Wide ResNet-50-2 | 2x | 68.9M |
+| `wideresnet101` | Wide ResNet-101-2 | 2x | 126.9M |
+
+**Feature Layers:** `layer1`, `layer2`, `layer3`, `layer4`
+
+**Best Practice:**
+```bash
+-b wideresnet50 -le layer2 -le layer3
+```
+
+<Note>
+  Wide ResNet-50 (`wideresnet50`) is the recommended baseline backbone, achieving 99.2% AUROC on MVTec AD.
+</Note>
+
+### ResNetV2 (BiT)
+
+Big Transfer (BiT) models pretrained on ImageNet-21k or ImageNet with better training.
+
+| Backbone Name | Architecture | Pretraining | Parameters |
+|---------------|--------------|-------------|------------|
+| `resnetv2_50_bit` | ResNetV2-50x3 | ImageNet BiT | ~100M |
+| `resnetv2_50_21k` | ResNetV2-50x3 | ImageNet-21k | ~100M |
+| `resnetv2_101_bit` | ResNetV2-101x3 | ImageNet BiT | ~150M |
+| `resnetv2_101_21k` | ResNetV2-101x3 | ImageNet-21k | ~150M |
+| `resnetv2_152_bit` | ResNetV2-152x4 | ImageNet BiT | ~212M |
+| `resnetv2_152_21k` | ResNetV2-152x4 | ImageNet-21k | ~212M |
+| `resnetv2_152_384` | ResNetV2-152x2 Teacher | ImageNet 384px | ~236M |
+| `resnetv2_101` | ResNetV2-101 | ImageNet | 44.5M |
+
+**Feature Layers:** Named stages vary by model - inspect with `model.named_modules()`
+
+### VGG Networks
+
+Classic VGG architectures - deeper but less efficient than ResNets.
+
+| Backbone Name | Architecture | Batch Norm | Parameters |
+|---------------|--------------|------------|------------|
+| `vgg11` | VGG-11 | No | 132.9M |
+| `vgg19` | VGG-19 | No | 143.7M |
+| `vgg19_bn` | VGG-19 | Yes | 143.7M |
+
+**Feature Layers:** `features[X]` where X is the layer index
+
+### DenseNet
+
+Densely connected networks with efficient parameter usage.
+
+| Backbone Name | Architecture | Growth Rate | Parameters |
+|---------------|--------------|-------------|------------|
+| `densenet121` | DenseNet-121 | 32 | 8.0M |
+| `densenet201` | DenseNet-201 | 32 | 20.0M |
+
+**Feature Layers:** `features.denseblock1`, `features.denseblock2`, `features.denseblock3`, `features.denseblock4`
+
+**Example for Ensemble:**
+```bash
+-b densenet201 -le 2.features.denseblock2 -le 2.features.denseblock3
+```
+
+### EfficientNet
+
+Scaled efficient architectures with compound scaling.
+
+| Backbone Name | Architecture | Input Size | Parameters |
+|---------------|--------------|------------|------------|
+| `efficientnet_b1` | EfficientNet-B1 | 240x240 | 7.8M |
+| `efficientnet_b3` | EfficientNet-B3 | 300x300 | 12.0M |
+| `efficientnet_b5` | EfficientNet-B5 | 456x456 | 30.0M |
+| `efficientnet_b7` | EfficientNet-B7 | 600x600 | 66.0M |
+| `efficientnet_b3a` | EfficientNet-B3a | 320x320 | 12.0M |
+| `efficientnetv2_m` | EfficientNetV2-M | 480x480 | 54.1M |
+| `efficientnetv2_l` | EfficientNetV2-L | 480x480 | 119.5M |
+
+**Feature Layers:** `blocks[X]` where X is the block index (0-6)
+
+<Note>
+  EfficientNet models are optimized for different input resolutions. Ensure your image preprocessing matches the expected input size.
+</Note>
+
+### Vision Transformers (ViT)
+
+Transformer-based architectures for vision tasks.
+
+#### Standard ViT
+
+| Backbone Name | Architecture | Patch Size | Parameters |
+|---------------|--------------|------------|------------|
+| `vit_small` | ViT-Small | 16x16 | 22M |
+| `vit_base` | ViT-Base | 16x16 | 86M |
+| `vit_large` | ViT-Large | 16x16 | 304M |
+| `vit_r50` | ViT-Large + ResNet50 | hybrid | 329M |
+
+#### DeiT (Data-efficient ViT)
+
+| Backbone Name | Architecture | Distillation | Parameters |
+|---------------|--------------|--------------|------------|
+| `vit_deit_base` | DeiT-Base | No | 86M |
+| `vit_deit_distilled` | DeiT-Base | Yes | 87M |
+
+#### Swin Transformer
+
+| Backbone Name | Architecture | Window Size | Parameters |
+|---------------|--------------|-------------|------------|
+| `vit_swin_base` | Swin-Base | 7x7 | 88M |
+| `vit_swin_large` | Swin-Large | 7x7 | 197M |
+
+**Feature Layers:** Varies by architecture - typically `blocks[X]` or hierarchical stages
+
+### MNASNet
+
+Mobile Neural Architecture Search optimized networks.
+
+| Backbone Name | Architecture | Multiplier | Parameters |
+|---------------|--------------|------------|------------|
+| `mnasnet_100` | MNASNet | 1.0x | 4.4M |
+| `mnasnet_a1` | MNASNet-A1 | 1.0x | 3.9M |
+| `mnasnet_b1` | MNASNet-B1 | 1.0x | 4.4M |
+
+**Feature Layers:** `layers[X]`
+
+### Inception
+
+| Backbone Name | Architecture | Parameters |
+|---------------|--------------|------------|
+| `inception_v4` | Inception V4 | 42.7M |
+
+**Feature Layers:** Named mixed layers like `features.mixed_6a`, `features.mixed_7a`
+
+### Legacy Networks
+
+| Backbone Name | Architecture | Parameters |
+|---------------|--------------|------------|
+| `alexnet` | AlexNet | 61.1M |
+| `bninception` | BN-Inception | 11.3M |
+
+## Feature Layer Selection
+
+Extract features from specific layers using `-le` or `--layer` flags.
+
+### Single Backbone
+
+```bash
+-b wideresnet50 -le layer2 -le layer3
+```
+
+Extracts and aggregates features from both `layer2` and `layer3`.
+
+### Multiple Backbones (Ensemble)
+
+Prefix layer names with backbone index (0-based):
+
+```bash
+-b wideresnet101 -b resnext101 -b densenet201 \
+-le 0.layer2 -le 0.layer3 \
+-le 1.layer2 -le 1.layer3 \
+-le 2.features.denseblock2 -le 2.features.denseblock3
+```
+
+- `0.*` refers to first backbone (wideresnet101)
+- `1.*` refers to second backbone (resnext101)
+- `2.*` refers to third backbone (densenet201)
+
+## Recommended Configurations
+
+### Best Single Backbone
+
+```bash
+-b wideresnet50 -le layer2 -le layer3
+```
+
+**Performance:** 99.2% Image AUROC, 98.1% Pixel AUROC
+
+### Best Ensemble
+
+```bash
+-b wideresnet101 -b resnext101 -b densenet201 \
+-le 0.layer2 -le 0.layer3 \
+-le 1.layer2 -le 1.layer3 \
+-le 2.features.denseblock2 -le 2.features.denseblock3
+```
+
+**Performance:** 99.6% Image AUROC, 98.2% Pixel AUROC
+
+### Memory-Efficient
+
+```bash
+-b resnet50 -le layer2 -le layer3
+```
+
+Lower memory footprint with competitive performance.
+
+### High-Resolution Images
+
+```bash
+-b wideresnet50 -le layer2 -le layer3
+```
+
+With dataset flags: `--resize 366 --imagesize 320`
+
+## Implementation Details
+
+### Backbone Loading
+
+Backbones are loaded from the `backbones.py` module:
+
+```python
+# src/patchcore/backbones.py
+_BACKBONES = {
+    "wideresnet50": "models.wide_resnet50_2(pretrained=True)",
+    "vit_base": 'timm.create_model("vit_base_patch16_224", pretrained=True)',
+    # ... more backbones
+}
+
+def load(name):
+    return eval(_BACKBONES[name])
+```
+
+### Sources
+
+- **torchvision.models**: Standard PyTorch models (ResNet, VGG, WideResNet, etc.)
+- **timm**: PyTorch Image Models library (ViT, EfficientNet, DeiT, Swin, etc.)
+- **pretrainedmodels**: Legacy models (BN-Inception)
+
+## Inspecting Feature Layers
+
+To find available layers for a backbone:
+
+```python
+import torch
+from patchcore import backbones
+
+model = backbones.load('wideresnet50')
+for name, module in model.named_modules():
+    print(name)
+```
+
+Common patterns:
+- ResNet family: `layer1`, `layer2`, `layer3`, `layer4`
+- DenseNet: `features.denseblock1` through `features.denseblock4`
+- EfficientNet: `blocks[0]` through `blocks[6]`
+- ViT: `blocks[0]` through `blocks[11]` (base)
+
+## Performance Considerations
+
+### GPU Memory Usage
+
+Approximate memory requirements (224x224 images, batch size 1):
+
+- ResNet-50: ~4GB
+- Wide ResNet-50: ~6GB
+- Wide ResNet-101: ~8GB
+- Ensemble (3 networks): ~10-11GB
+- ViT-Large: ~8GB
+- EfficientNet-B7: ~12GB
+
+### Inference Speed
+
+Relative speeds on RTX 3090 (images/sec):
+
+- ResNet-50: ~100
+- Wide ResNet-50: ~80
+- DenseNet-201: ~60
+- EfficientNet-B5: ~50
+- ViT-Base: ~70
+- Ensemble (3 networks): ~30
+
+### Accuracy vs. Efficiency
+
+Recommended backbones by use case:
+
+- **Highest accuracy**: Ensemble of WideResNet101 + ResNeXt101 + DenseNet201
+- **Best balance**: WideResNet-50 (single backbone)
+- **Fastest**: ResNet-50
+- **Most memory-efficient**: MNASNet-100 or EfficientNet-B1
+
+<Note>
+  For production deployments, WideResNet-50 offers the best trade-off between accuracy (99.2% AUROC) and computational efficiency.
+</Note>

@@ -1,0 +1,357 @@
+---
+title: 'Sampler'
+description: 'Feature sampling strategies for memory bank optimization'
+icon: 'filter'
+---
+
+## Overview
+
+Samplers reduce the size of the feature memory bank by selecting a representative subset of features from the training data. This improves inference speed and memory efficiency while maintaining detection accuracy.
+
+---
+
+## IdentitySampler
+
+```python
+class IdentitySampler
+```
+
+A no-op sampler that returns all features without any subsampling. Use this when you want to keep all training features in the memory bank.
+
+### Methods
+
+#### run
+
+```python
+def run(
+    self,
+    features: Union[torch.Tensor, np.ndarray]
+) -> Union[torch.Tensor, np.ndarray]
+```
+
+Returns the input features unchanged.
+
+<ParamField path="features" type="torch.Tensor or np.ndarray" required>
+  Input features with shape `[N, D]` where N is the number of samples and D is the feature dimension.
+</ParamField>
+
+#### Returns
+
+<ResponseField name="features" type="torch.Tensor or np.ndarray">
+  The same features that were input, with no modification.
+</ResponseField>
+
+#### Example
+
+```python
+from patchcore.sampler import IdentitySampler
+import numpy as np
+
+sampler = IdentitySampler()
+features = np.random.randn(1000, 512)
+sampled_features = sampler.run(features)
+# sampled_features.shape == (1000, 512) - no change
+```
+
+---
+
+## BaseSampler
+
+```python
+class BaseSampler(abc.ABC)
+```
+
+Abstract base class for all sampling strategies that perform subsampling.
+
+### Constructor
+
+```python
+def __init__(self, percentage: float)
+```
+
+<ParamField path="percentage" type="float" required>
+  Percentage of features to keep, must be in the range (0, 1). For example, 0.1 means keep 10% of features.
+</ParamField>
+
+### Methods
+
+#### run
+
+```python
+@abc.abstractmethod
+def run(
+    self,
+    features: Union[torch.Tensor, np.ndarray]
+) -> Union[torch.Tensor, np.ndarray]
+```
+
+Abstract method that must be implemented by subclasses.
+
+---
+
+## GreedyCoresetSampler
+
+```python
+class GreedyCoresetSampler(BaseSampler)
+```
+
+Greedy coreset subsampling algorithm that iteratively selects the most representative features. This produces high-quality subsamples but requires computing the full N×N distance matrix.
+
+### Constructor
+
+```python
+def __init__(
+    self,
+    percentage: float,
+    device: torch.device,
+    dimension_to_project_features_to: int = 128
+)
+```
+
+<ParamField path="percentage" type="float" required>
+  Percentage of features to keep (0 < percentage < 1). For example, 0.1 keeps 10% of features.
+</ParamField>
+
+<ParamField path="device" type="torch.device" required>
+  Device on which to perform coreset computation (CPU or CUDA).
+</ParamField>
+
+<ParamField path="dimension_to_project_features_to" type="int" default="128">
+  Features are projected to this dimension before computing distances to speed up computation.
+</ParamField>
+
+### Methods
+
+#### run
+
+```python
+def run(
+    self,
+    features: Union[torch.Tensor, np.ndarray]
+) -> Union[torch.Tensor, np.ndarray]
+```
+
+Subsamples features using the greedy coreset algorithm.
+
+<ParamField path="features" type="torch.Tensor or np.ndarray" required>
+  Input features with shape `[N, D]`.
+</ParamField>
+
+#### Returns
+
+<ResponseField name="sampled_features" type="torch.Tensor or np.ndarray">
+  Subsampled features with shape `[N*percentage, D]`.
+</ResponseField>
+
+#### Example
+
+```python
+import torch
+from patchcore.sampler import GreedyCoresetSampler
+
+device = torch.device("cuda")
+sampler = GreedyCoresetSampler(
+    percentage=0.1,  # Keep 10% of features
+    device=device,
+    dimension_to_project_features_to=128
+)
+
+# Sample from 10,000 features
+features = torch.randn(10000, 1024).to(device)
+sampled_features = sampler.run(features)
+print(sampled_features.shape)  # torch.Size([1000, 1024])
+```
+
+<Note>
+  **Memory Usage**: This sampler computes a full N×N distance matrix, which requires O(N²) memory. For very large feature sets (>50,000 samples), consider using `ApproximateGreedyCoresetSampler` instead.
+</Note>
+
+---
+
+## ApproximateGreedyCoresetSampler
+
+```python
+class ApproximateGreedyCoresetSampler(GreedyCoresetSampler)
+```
+
+Approximate greedy coreset subsampling that avoids computing the full N×N distance matrix. This is more memory-efficient but slower than the exact version.
+
+### Constructor
+
+```python
+def __init__(
+    self,
+    percentage: float,
+    device: torch.device,
+    number_of_starting_points: int = 10,
+    dimension_to_project_features_to: int = 128
+)
+```
+
+<ParamField path="percentage" type="float" required>
+  Percentage of features to keep (0 < percentage < 1).
+</ParamField>
+
+<ParamField path="device" type="torch.device" required>
+  Device on which to perform coreset computation.
+</ParamField>
+
+<ParamField path="number_of_starting_points" type="int" default="10">
+  Number of random starting points to use for distance approximation. Higher values improve accuracy but increase computation time.
+</ParamField>
+
+<ParamField path="dimension_to_project_features_to" type="int" default="128">
+  Target dimension for feature projection before distance computation.
+</ParamField>
+
+### Methods
+
+#### run
+
+```python
+def run(
+    self,
+    features: Union[torch.Tensor, np.ndarray]
+) -> Union[torch.Tensor, np.ndarray]
+```
+
+Subsamples features using approximate greedy coreset algorithm.
+
+<ParamField path="features" type="torch.Tensor or np.ndarray" required>
+  Input features with shape `[N, D]`.
+</ParamField>
+
+#### Returns
+
+<ResponseField name="sampled_features" type="torch.Tensor or np.ndarray">
+  Subsampled features with shape `[N*percentage, D]`.
+</ResponseField>
+
+#### Example
+
+```python
+import torch
+from patchcore.sampler import ApproximateGreedyCoresetSampler
+
+device = torch.device("cuda")
+sampler = ApproximateGreedyCoresetSampler(
+    percentage=0.1,
+    device=device,
+    number_of_starting_points=10,
+    dimension_to_project_features_to=128
+)
+
+# Sample from a large feature set
+features = torch.randn(100000, 1024).to(device)
+sampled_features = sampler.run(features)
+print(sampled_features.shape)  # torch.Size([10000, 1024])
+```
+
+<Note>
+  **Performance Trade-off**: This sampler uses less memory than `GreedyCoresetSampler` but takes longer to compute. It's ideal for datasets with >50,000 training images where memory is a constraint.
+</Note>
+
+---
+
+## RandomSampler
+
+```python
+class RandomSampler(BaseSampler)
+```
+
+Randomly samples a subset of features. This is the fastest sampling method but may not preserve the feature distribution as well as coreset methods.
+
+### Constructor
+
+```python
+def __init__(self, percentage: float)
+```
+
+<ParamField path="percentage" type="float" required>
+  Percentage of features to keep (0 < percentage < 1).
+</ParamField>
+
+### Methods
+
+#### run
+
+```python
+def run(
+    self,
+    features: Union[torch.Tensor, np.ndarray]
+) -> Union[torch.Tensor, np.ndarray]
+```
+
+Randomly samples features without replacement.
+
+<ParamField path="features" type="torch.Tensor or np.ndarray" required>
+  Input features with shape `[N, D]`.
+</ParamField>
+
+#### Returns
+
+<ResponseField name="sampled_features" type="torch.Tensor or np.ndarray">
+  Randomly sampled features with shape `[N*percentage, D]`.
+</ResponseField>
+
+#### Example
+
+```python
+import numpy as np
+from patchcore.sampler import RandomSampler
+
+sampler = RandomSampler(percentage=0.1)
+features = np.random.randn(10000, 1024)
+sampled_features = sampler.run(features)
+print(sampled_features.shape)  # (1000, 1024)
+```
+
+---
+
+## Comparison
+
+| Sampler | Speed | Memory | Quality | Use Case |
+|---------|-------|--------|---------|----------|
+| **IdentitySampler** | Instant | High | Perfect | Small datasets, high accuracy requirements |
+| **RandomSampler** | Fast | Low | Good | Quick experiments, large datasets |
+| **GreedyCoresetSampler** | Medium | High | Excellent | Medium datasets (under 50k samples) |
+| **ApproximateGreedyCoresetSampler** | Slow | Low | Excellent | Large datasets (over 50k samples) |
+
+---
+
+## Usage with PatchCore
+
+```python
+import torch
+from patchcore import PatchCore
+from patchcore.sampler import ApproximateGreedyCoresetSampler
+import patchcore.backbones
+
+device = torch.device("cuda")
+model = PatchCore(device)
+
+# Create sampler to keep 10% of features
+sampler = ApproximateGreedyCoresetSampler(
+    percentage=0.1,
+    device=device
+)
+
+# Load model with sampler
+backbone = patchcore.backbones.load("wideresnet50")
+model.load(
+    backbone=backbone,
+    layers_to_extract_from=["layer2", "layer3"],
+    device=device,
+    input_shape=(3, 224, 224),
+    pretrain_embed_dimension=1024,
+    target_embed_dimension=1024,
+    featuresampler=sampler  # Use coreset sampler
+)
+
+# Train as usual
+model.fit(train_loader)
+```
+
+<Note>
+  **Recommendation**: For most industrial anomaly detection tasks, use `ApproximateGreedyCoresetSampler` with `percentage=0.1` (10%). This provides the best balance of speed, memory, and accuracy.
+</Note>

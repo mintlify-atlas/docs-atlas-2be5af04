@@ -1,0 +1,465 @@
+---
+title: 'utils'
+description: 'Utility functions for visualization, storage, and reproducibility'
+icon: 'wrench'
+---
+
+## Overview
+
+The `utils` module provides essential utility functions for PatchCore, including visualization of segmentation results, storage management, device configuration, random seed fixing, and results computation.
+
+## Functions
+
+### plot_segmentation_images
+
+Generates and saves visualization images comparing original images, ground truth masks, and predicted anomaly segmentations.
+
+```python
+from patchcore.utils import plot_segmentation_images
+
+plot_segmentation_images(
+    savefolder="./results/segmentations",
+    image_paths=image_paths,
+    segmentations=predicted_masks,
+    anomaly_scores=scores,
+    mask_paths=gt_mask_paths
+)
+```
+
+#### Parameters
+
+<ParamField path="savefolder" type="str" required>
+  Directory where segmentation visualization images will be saved. Created automatically if it doesn't exist.
+</ParamField>
+
+<ParamField path="image_paths" type="List[str]" required>
+  List of paths to the original input images.
+</ParamField>
+
+<ParamField path="segmentations" type="List[np.ndarray]" required>
+  List of predicted anomaly segmentation maps. Each array should be 2D (H, W) representing anomaly heatmaps.
+</ParamField>
+
+<ParamField path="anomaly_scores" type="List[float] | None" default="None">
+  Optional list of image-level anomaly scores corresponding to each image.
+</ParamField>
+
+<ParamField path="mask_paths" type="List[str] | None" default="None">
+  Optional list of paths to ground truth mask images for comparison.
+</ParamField>
+
+<ParamField path="image_transform" type="callable" default="lambda x: x">
+  Optional function to transform images before visualization (e.g., denormalization).
+</ParamField>
+
+<ParamField path="mask_transform" type="callable" default="lambda x: x">
+  Optional function to transform masks before visualization.
+</ParamField>
+
+<ParamField path="save_depth" type="int" default="4">
+  Number of path components to use from image_path for generating save filenames.
+</ParamField>
+
+#### Behavior
+
+- Creates a 2-column plot (3-column if masks provided) showing:
+  - Column 1: Original image
+  - Column 2: Ground truth mask (if provided)
+  - Column 3: Predicted segmentation heatmap
+- Saves each visualization as a PNG file
+- Shows progress bar during generation
+
+```python
+image_paths = [
+    "/data/mvtec/bottle/test/broken_large/000.png",
+    "/data/mvtec/bottle/test/broken_large/001.png"
+]
+
+segmentations = [pred_mask_1, pred_mask_2]  # numpy arrays
+scores = [0.85, 0.92]
+
+plot_segmentation_images(
+    savefolder="./visualizations",
+    image_paths=image_paths,
+    segmentations=segmentations,
+    anomaly_scores=scores,
+    mask_paths=[
+        "/data/mvtec/bottle/ground_truth/broken_large/000_mask.png",
+        "/data/mvtec/bottle/ground_truth/broken_large/001_mask.png"
+    ],
+    save_depth=4
+)
+# Saves: bottle_test_broken_large_000.png, bottle_test_broken_large_001.png
+```
+
+---
+
+### create_storage_folder
+
+Creates a hierarchical folder structure for organizing experiment results.
+
+```python
+from patchcore.utils import create_storage_folder
+
+save_path = create_storage_folder(
+    main_folder_path="./results",
+    project_folder="patchcore_experiments",
+    group_folder="bottle_exp1",
+    mode="iterate"
+)
+```
+
+#### Parameters
+
+<ParamField path="main_folder_path" type="str" required>
+  Root directory for all results.
+</ParamField>
+
+<ParamField path="project_folder" type="str" required>
+  Project-level subdirectory name.
+</ParamField>
+
+<ParamField path="group_folder" type="str" required>
+  Experiment group folder name.
+</ParamField>
+
+<ParamField path="mode" type="str" default="iterate">
+  Folder creation mode:
+  - `"iterate"`: Appends counter (_0, _1, _2...) if folder exists
+  - `"overwrite"`: Uses existing folder or creates new one
+</ParamField>
+
+#### Returns
+
+<ResponseField name="return" type="str">
+  Full path to the created storage folder.
+</ResponseField>
+
+#### Example
+
+```python
+# First call
+path1 = create_storage_folder("./results", "project", "exp", mode="iterate")
+# Returns: ./results/project/exp
+
+# Second call (folder exists)
+path2 = create_storage_folder("./results", "project", "exp", mode="iterate")
+# Returns: ./results/project/exp_0
+
+# Third call
+path3 = create_storage_folder("./results", "project", "exp", mode="iterate")
+# Returns: ./results/project/exp_1
+
+# With overwrite mode
+path4 = create_storage_folder("./results", "project", "exp", mode="overwrite")
+# Returns: ./results/project/exp (reuses existing folder)
+```
+
+---
+
+### set_torch_device
+
+Configures and returns the appropriate PyTorch device based on GPU availability.
+
+```python
+from patchcore.utils import set_torch_device
+
+device = set_torch_device(gpu_ids=[0])
+# Returns: torch.device("cuda:0")
+
+device = set_torch_device(gpu_ids=[])
+# Returns: torch.device("cpu")
+```
+
+#### Parameters
+
+<ParamField path="gpu_ids" type="List[int]" required>
+  List of GPU device IDs to use. If empty list, CPU is selected.
+</ParamField>
+
+#### Returns
+
+<ResponseField name="return" type="torch.device">
+  PyTorch device object configured for the specified GPU or CPU.
+</ResponseField>
+
+#### Example
+
+```python
+import torch
+from patchcore.utils import set_torch_device
+
+# Use first GPU
+device = set_torch_device([0])
+model = model.to(device)
+tensor = torch.randn(10, 512).to(device)
+
+# Use CPU
+device = set_torch_device([])
+model = model.to(device)
+
+# Multi-GPU scenario (uses only first GPU)
+device = set_torch_device([0, 1, 2])  # Still returns cuda:0
+```
+
+---
+
+### fix_seeds
+
+Sets random seeds for reproducible experiments across NumPy, Python random, and PyTorch.
+
+```python
+from patchcore.utils import fix_seeds
+
+fix_seeds(seed=42, with_torch=True, with_cuda=True)
+```
+
+#### Parameters
+
+<ParamField path="seed" type="int" required>
+  Random seed value to set across all libraries.
+</ParamField>
+
+<ParamField path="with_torch" type="bool" default="True">
+  If True, fixes PyTorch CPU random seed.
+</ParamField>
+
+<ParamField path="with_cuda" type="bool" default="True">
+  If True, fixes PyTorch CUDA random seeds and enables deterministic mode.
+</ParamField>
+
+#### Behavior
+
+Always sets:
+- `random.seed(seed)` - Python standard library
+- `np.random.seed(seed)` - NumPy
+
+If `with_torch=True`, additionally sets:
+- `torch.manual_seed(seed)` - PyTorch CPU
+
+If `with_cuda=True`, additionally sets:
+- `torch.cuda.manual_seed(seed)` - Single GPU
+- `torch.cuda.manual_seed_all(seed)` - All GPUs
+- `torch.backends.cudnn.deterministic = True` - Deterministic cuDNN
+
+<Warning>
+  Setting `with_cuda=True` enables deterministic mode which may reduce performance. Only use for reproducibility testing.
+</Warning>
+
+#### Example
+
+```python
+from patchcore.utils import fix_seeds
+import torch
+import numpy as np
+
+# Full reproducibility
+fix_seeds(42, with_torch=True, with_cuda=True)
+
+# Generate reproducible data
+data1 = np.random.randn(100)
+tensor1 = torch.randn(100)
+
+# Reset and regenerate - should match
+fix_seeds(42, with_torch=True, with_cuda=True)
+data2 = np.random.randn(100)
+tensor2 = torch.randn(100)
+
+assert np.array_equal(data1, data2)
+assert torch.equal(tensor1, tensor2)
+```
+
+---
+
+### compute_and_store_final_results
+
+Computes mean metrics across multiple datasets and saves results as a CSV file.
+
+```python
+from patchcore.utils import compute_and_store_final_results
+
+results = [
+    [0.95, 0.92, 0.88, 0.90, 0.85],  # bottle results
+    [0.93, 0.89, 0.86, 0.91, 0.87],  # cable results
+    [0.96, 0.94, 0.91, 0.93, 0.89],  # capsule results
+]
+
+row_names = ["bottle", "cable", "capsule"]
+
+mean_metrics = compute_and_store_final_results(
+    results_path="./results/bottle_experiment",
+    results=results,
+    row_names=row_names
+)
+```
+
+#### Parameters
+
+<ParamField path="results_path" type="str" required>
+  Directory where the results CSV file will be saved.
+</ParamField>
+
+<ParamField path="results" type="List[List[float]]" required>
+  List of result lists, where each inner list contains metrics for one dataset/class. Each inner list should contain values corresponding to `column_names`.
+</ParamField>
+
+<ParamField path="row_names" type="List[str] | None" default="None">
+  Optional list of names for each row (e.g., dataset names or class names). Must match length of `results`.
+</ParamField>
+
+<ParamField path="column_names" type="List[str]" default="[...]">
+  Names of the metric columns. Default:
+  - "Instance AUROC"
+  - "Full Pixel AUROC"
+  - "Full PRO"
+  - "Anomaly Pixel AUROC"
+  - "Anomaly PRO"
+</ParamField>
+
+#### Returns
+
+<ResponseField name="return" type="dict">
+  Dictionary with keys `"mean_{column_name}"` containing the mean value for each metric across all datasets.
+</ResponseField>
+
+#### Output File
+
+Creates `results.csv` in the specified path with:
+- Header row with column names
+- One row per dataset with metric values
+- Final row with mean values across all datasets
+
+#### Example
+
+```python
+from patchcore.utils import compute_and_store_final_results
+
+results = [
+    [0.982, 0.976, 0.945, 0.978, 0.950],  # bottle
+    [0.891, 0.885, 0.823, 0.890, 0.831],  # cable
+    [0.923, 0.915, 0.867, 0.918, 0.873],  # capsule
+]
+
+mean_metrics = compute_and_store_final_results(
+    results_path="./experiment_results",
+    results=results,
+    row_names=["bottle", "cable", "capsule"],
+    column_names=[
+        "Image AUROC",
+        "Pixel AUROC",
+        "PRO Score",
+        "AP",
+        "F1-Max"
+    ]
+)
+
+print(mean_metrics)
+# {
+#     "mean_Image AUROC": 0.932,
+#     "mean_Pixel AUROC": 0.925,
+#     "mean_PRO Score": 0.878,
+#     "mean_AP": 0.928,
+#     "mean_F1-Max": 0.885
+# }
+```
+
+**Generated CSV (`results.csv`):**
+
+```csv
+Row Names,Image AUROC,Pixel AUROC,PRO Score,AP,F1-Max
+bottle,0.982,0.976,0.945,0.978,0.950
+cable,0.891,0.885,0.823,0.890,0.831
+capsule,0.923,0.915,0.867,0.918,0.873
+Mean,0.932,0.925,0.878,0.928,0.885
+```
+
+---
+
+## Complete Workflow Example
+
+```python
+import torch
+import numpy as np
+from patchcore.utils import (
+    fix_seeds,
+    set_torch_device,
+    create_storage_folder,
+    plot_segmentation_images,
+    compute_and_store_final_results
+)
+
+# 1. Setup reproducibility
+fix_seeds(42, with_torch=True, with_cuda=True)
+
+# 2. Configure device
+device = set_torch_device(gpu_ids=[0])
+print(f"Using device: {device}")
+
+# 3. Create storage structure
+save_path = create_storage_folder(
+    main_folder_path="./experiments",
+    project_folder="patchcore_mvtec",
+    group_folder="bottle_run",
+    mode="iterate"
+)
+print(f"Results will be saved to: {save_path}")
+
+# 4. Run inference (pseudo-code)
+image_paths, pred_segmentations, scores, mask_paths = run_inference(model, test_loader)
+
+# 5. Visualize segmentations
+plot_segmentation_images(
+    savefolder=f"{save_path}/segmentations",
+    image_paths=image_paths,
+    segmentations=pred_segmentations,
+    anomaly_scores=scores,
+    mask_paths=mask_paths,
+    save_depth=4
+)
+
+# 6. Compute and save metrics
+results = [
+    [image_auroc, pixel_auroc, pro_score, anom_auroc, anom_pro]
+    # ... for each class
+]
+
+mean_metrics = compute_and_store_final_results(
+    results_path=save_path,
+    results=results,
+    row_names=class_names
+)
+
+print(f"Mean Image AUROC: {mean_metrics['mean_Instance AUROC']:.3f}")
+print(f"Mean Pixel AUROC: {mean_metrics['mean_Full Pixel AUROC']:.3f}")
+```
+
+---
+
+## Logging
+
+The utils module uses Python's standard logging module:
+
+```python
+import logging
+
+LOGGER = logging.getLogger(__name__)
+
+# Configure logging level
+logging.basicConfig(level=logging.INFO)
+
+# Logger outputs mean metrics automatically in compute_and_store_final_results
+```
+
+## Notes
+
+<Note>
+  **Image Transforms:** The `plot_segmentation_images` function expects transforms that can handle both PIL images and tensors. Ensure your transforms are compatible.
+</Note>
+
+<Note>
+  **Save Depth:** The `save_depth` parameter controls how many directory levels from the image path are used in the filename. Adjust based on your directory structure to avoid name collisions.
+</Note>
+
+<Note>
+  **Deterministic Performance:** Using `fix_seeds` with `with_cuda=True` enables cuDNN deterministic mode, which may reduce training/inference speed by 10-20%. Use only when reproducibility is critical.
+</Note>

@@ -1,0 +1,829 @@
+---
+title: 'Configuration Reference'
+description: 'Complete guide to all PatchCore training parameters and their effects'
+icon: 'sliders'
+---
+
+## Overview
+
+PatchCore training is configured through command-line arguments organized into four main groups:
+
+1. **Global arguments**: GPU, seed, logging, output paths
+2. **PatchCore arguments**: Backbone, layers, dimensions, patch settings
+3. **Sampler arguments**: Coreset sampling method and percentage
+4. **Dataset arguments**: Data loading, image preprocessing, categories
+
+## Global Arguments
+
+### GPU and Device Settings
+
+<ParamField path="--gpu" type="int" default="0" required>
+  GPU device ID(s) to use for training.
+  
+  ```bash Single GPU
+  --gpu 0  # Use first GPU
+  ```
+  
+  ```bash Multiple GPUs (not fully supported)
+  --gpu 0 --gpu 1  # Specify multiple devices
+  ```
+  
+  **Location**: `run_patchcore.py:24`
+  
+  <Accordion title="How GPU selection works">
+    The specified GPU is used for:
+    - Feature extraction from backbone
+    - FAISS nearest-neighbor search (if `--faiss_on_gpu` enabled)
+    - Coreset sampling operations
+    
+    Check available GPUs with `nvidia-smi`.
+  </Accordion>
+</ParamField>
+
+<ParamField path="--seed" type="int" default="0">
+  Random seed for reproducibility.
+  
+  ```bash
+  --seed 0   # Default seed
+  --seed 42  # Custom seed
+  ```
+  
+  **Location**: `run_patchcore.py:25`
+  
+  <Note>
+    Using the same seed with the same configuration should produce identical results. However, FAISS operations may have minor non-determinism.
+  </Note>
+</ParamField>
+
+### Model Saving
+
+<ParamField path="--save_patchcore_model" type="flag">
+  Save trained PatchCore model(s) to disk.
+  
+  ```bash
+  --save_patchcore_model  # Enable model saving
+  ```
+  
+  **Location**: `run_patchcore.py:29`
+  
+  **Saves**:
+  - `nnscorer_search_index.faiss`: Nearest neighbor search index
+  - `patchcore_params.pkl`: Model configuration and parameters
+  
+  **Storage**: 50-500 MB per category depending on sampling percentage.
+  
+  <Warning>
+    Without this flag, trained models are discarded after evaluation. Always use this flag if you plan to deploy the model.
+  </Warning>
+</ParamField>
+
+<ParamField path="--save_segmentation_images" type="flag">
+  Save visualization images showing anomaly segmentation results.
+  
+  ```bash
+  --save_segmentation_images
+  ```
+  
+  **Location**: `run_patchcore.py:28`
+  
+  Creates overlay images showing:
+  - Original image
+  - Predicted anomaly heatmap
+  - Ground truth mask
+  - Anomaly score
+</ParamField>
+
+### Logging and Output
+
+<ParamField path="results_path" type="string" required>
+  Base directory for storing results.
+  
+  ```bash
+  python bin/run_patchcore.py results [...]  # Save to ./results/
+  python bin/run_patchcore.py /path/to/output [...]  # Custom path
+  ```
+  
+  **Location**: `run_patchcore.py:23`
+  
+  **Creates structure**:
+  ```
+  results/
+  └── {log_project}/
+      └── {log_group}_0/
+          ├── models/
+          └── results.csv
+  ```
+</ParamField>
+
+<ParamField path="--log_project" type="string" default="project">
+  Project name for organizing experiments.
+  
+  ```bash
+  --log_project MVTecAD_Results
+  ```
+  
+  **Location**: `run_patchcore.py:27`
+</ParamField>
+
+<ParamField path="--log_group" type="string" default="group">
+  Experiment group/run name.
+  
+  ```bash
+  --log_group IM224_WR50_L2-3_P01_D1024-1024_PS-3_AN-1_S0
+  ```
+  
+  **Location**: `run_patchcore.py:26`
+  
+  <Note>
+    Use descriptive names encoding key parameters. Example format:
+    - `IM224`: Image size 224
+    - `WR50`: WideResNet50
+    - `L2-3`: Layers 2 and 3
+    - `P01`: 1% sampling
+    - `D1024-1024`: Dimensions
+    - `S0`: Seed 0
+  </Note>
+</ParamField>
+
+<ParamField path="--log_online" type="flag">
+  Enable Weights & Biases logging (requires W&B account).
+  
+  ```bash
+  --log_online  # Upload metrics to W&B
+  ```
+  
+  **Location**: Mentioned in `README.md:102,143`
+  
+  Set your W&B API key in the script before using.
+</ParamField>
+
+## PatchCore Arguments
+
+All arguments under the `patch_core` command control the model architecture and feature extraction.
+
+### Backbone Configuration
+
+<ParamField path="-b, --backbone_names" type="string" required>
+  Pretrained backbone network(s) for feature extraction.
+  
+  ```bash Single backbone
+  patch_core -b wideresnet50 [...]
+  ```
+  
+  ```bash Multiple backbones (ensemble)
+  patch_core -b wideresnet101 -b resnext101 -b densenet201 [...]
+  ```
+  
+  **Location**: `run_patchcore.py:242`
+  
+  **Available backbones** (from `backbones.py:4-47`):
+  
+  <Tabs>
+    <Tab title="ResNet Family">
+      - `resnet50`: ResNet-50
+      - `resnet101`: ResNet-101
+      - `resnet200`: ResNet-200 (via timm)
+      - `wideresnet50`: Wide ResNet-50-2 (recommended)
+      - `wideresnet101`: Wide ResNet-101-2
+      - `resnext101`: ResNeXt-101-32x8d
+      - `resnest50`: ResNeSt-50
+    </Tab>
+    
+    <Tab title="DenseNet">
+      - `densenet121`: DenseNet-121
+      - `densenet201`: DenseNet-201 (used in ensembles)
+    </Tab>
+    
+    <Tab title="EfficientNet">
+      - `efficientnet_b1` through `efficientnet_b7`
+      - `efficientnetv2_m`: EfficientNetV2-M
+      - `efficientnetv2_l`: EfficientNetV2-L
+    </Tab>
+    
+    <Tab title="Vision Transformers">
+      - `vit_small`: ViT-Small/16
+      - `vit_base`: ViT-Base/16
+      - `vit_large`: ViT-Large/16
+      - `vit_deit_base`: DeiT-Base
+      - `vit_swin_base`: Swin-Base
+    </Tab>
+    
+    <Tab title="Other">
+      - `alexnet`: AlexNet
+      - `vgg11`, `vgg19`, `vgg19_bn`: VGG variants
+      - `inception_v4`: Inception v4
+      - `mnasnet_100`: MnasNet
+    </Tab>
+  </Tabs>
+  
+  <Note>
+    All backbones are loaded with ImageNet pretrained weights.
+  </Note>
+</ParamField>
+
+<ParamField path="-le, --layers_to_extract_from" type="string" required>
+  Layer names to extract features from.
+  
+  ```bash Single backbone
+  patch_core -b wideresnet50 -le layer2 -le layer3 [...]
+  ```
+  
+  ```bash Multiple backbones (prefix with index)
+  patch_core \
+    -b wideresnet101 -b densenet201 \
+    -le 0.layer2 -le 0.layer3 \
+    -le 1.features.denseblock2 -le 1.features.denseblock3 [...]
+  ```
+  
+  **Location**: `run_patchcore.py:243`
+  
+  **Layer naming by architecture**:
+  
+  <AccordionGroup>
+    <Accordion title="ResNet / WideResNet / ResNeXt">
+      Available layers:
+      - `layer1`: 56×56 spatial resolution
+      - `layer2`: 28×28 (recommended)
+      - `layer3`: 14×14 (recommended)
+      - `layer4`: 7×7
+      
+      **Recommended**: `layer2` + `layer3` for multi-scale features
+    </Accordion>
+    
+    <Accordion title="DenseNet">
+      Available layers:
+      - `features.denseblock1`: Early features
+      - `features.denseblock2`: Mid-level (recommended)
+      - `features.denseblock3`: High-level (recommended)
+      - `features.denseblock4`: Final features
+      
+      **Note**: Must include `features.` prefix
+    </Accordion>
+    
+    <Accordion title="EfficientNet">
+      Available layers (example for EfficientNet-B7):
+      - `blocks.2`: Early features
+      - `blocks.4`: Mid features
+      - `blocks.6`: High features (recommended)
+      - `blocks.8`: Final features (recommended)
+      
+      Layer indices vary by EfficientNet variant.
+    </Accordion>
+    
+    <Accordion title="Vision Transformers">
+      Available layers:
+      - `blocks.{N}`: Transformer blocks (0 to 11 for ViT-Base)
+      
+      **Recommended**: Last few blocks (e.g., `blocks.9`, `blocks.11`)
+      
+      <Warning>
+        ViT support is experimental. Performance may vary.
+      </Warning>
+    </Accordion>
+  </AccordionGroup>
+</ParamField>
+
+### Feature Dimensions
+
+<ParamField path="--pretrain_embed_dimension" type="int" default="1024">
+  Dimensionality of features extracted from backbone layers.
+  
+  ```bash
+  --pretrain_embed_dimension 1024  # Standard
+  ```
+  
+  **Location**: `run_patchcore.py:245`
+  
+  This should match the combined output dimension of selected layers. For WideResNet50 layer2+layer3:
+  - layer2: 512 channels
+  - layer3: 1024 channels
+  - Combined via preprocessing: 1024 dimensions
+</ParamField>
+
+<ParamField path="--target_embed_dimension" type="int" default="1024">
+  Final embedding dimension after aggregation.
+  
+  ```bash
+  --target_embed_dimension 1024  # Single model
+  --target_embed_dimension 384   # Ensemble (lower per model)
+  ```
+  
+  **Location**: `run_patchcore.py:246`
+  
+  **Trade-offs**:
+  - **Higher** (1024): Better feature representation, more memory
+  - **Lower** (384, 512): Less memory, faster inference, minimal accuracy loss
+  
+  For ensembles, use lower dimensions (384) to save memory across multiple models.
+</ParamField>
+
+### Patch Settings
+
+<ParamField path="--patchsize" type="int" default="3">
+  Local neighborhood aggregation size.
+  
+  ```bash
+  --patchsize 3  # 3x3 neighborhood (detection)
+  --patchsize 5  # 5x5 neighborhood (segmentation)
+  ```
+  
+  **Location**: `run_patchcore.py:252`
+  
+  **From PatchMaker class** (`patchcore.py:278-290`):
+  - Creates patches via unfold operation
+  - Padding: `(patchsize - 1) / 2`
+  - Aggregates local features into patch representations
+  
+  **Recommendations**:
+  - **Detection focus** (image-level AUROC): Use 3
+  - **Segmentation focus** (pixel-level AUROC): Use 5
+  - Larger patches smooth predictions, better for segmentation
+</ParamField>
+
+<ParamField path="--patchscore" type="string" default="max">
+  Method for aggregating patch scores into image-level score.
+  
+  ```bash
+  --patchscore max  # Maximum patch score
+  ```
+  
+  **Location**: `run_patchcore.py:253`
+  
+  Typically use `max` (default) - most anomalous patch determines image score.
+</ParamField>
+
+<ParamField path="--patchoverlap" type="float" default="0.0">
+  Overlap between patches during extraction.
+  
+  ```bash
+  --patchoverlap 0.0  # No overlap
+  ```
+  
+  **Location**: `run_patchcore.py:254`
+  
+  Usually left at 0.0. Non-zero values increase computation.
+</ParamField>
+
+### Preprocessing and Aggregation
+
+<ParamField path="--preprocessing" type="choice" default="mean">
+  Method for preprocessing multi-layer features.
+  
+  ```bash
+  --preprocessing mean  # Average pooling (default)
+  --preprocessing conv  # Convolutional projection
+  ```
+  
+  **Location**: `run_patchcore.py:247`
+  
+  **Options**: `mean`, `conv`
+  
+  `mean` is standard and recommended.
+</ParamField>
+
+<ParamField path="--aggregation" type="choice" default="mean">
+  Method for aggregating features across layers.
+  
+  ```bash
+  --aggregation mean  # Simple averaging
+  --aggregation mlp   # Learnable MLP aggregation
+  ```
+  
+  **Location**: `run_patchcore.py:248`
+  
+  **Options**: `mean`, `mlp`
+  
+  `mean` is standard (no learnable parameters).
+</ParamField>
+
+### Anomaly Scoring
+
+<ParamField path="--anomaly_scorer_num_nn" type="int" default="5">
+  Number of nearest neighbors for anomaly score computation.
+  
+  ```bash
+  --anomaly_scorer_num_nn 1  # Single NN (detection)
+  --anomaly_scorer_num_nn 3  # 3-NN (balanced)
+  --anomaly_scorer_num_nn 5  # 5-NN (segmentation)
+  ```
+  
+  **Location**: `run_patchcore.py:250`
+  
+  **From NearestNeighbourScorer** (referenced in `patchcore.py:69-71`):
+  - Computes distance to k nearest neighbors in memory bank
+  - Anomaly score = average distance to k-NN
+  
+  **Recommendations**:
+  - **1-NN**: Best for detection, fastest
+  - **3-NN**: Balanced, more robust to outliers
+  - **5-NN**: Better segmentation, smoother scores
+</ParamField>
+
+### FAISS Configuration
+
+<ParamField path="--faiss_on_gpu" type="flag">
+  Use GPU for FAISS nearest neighbor search.
+  
+  ```bash
+  --faiss_on_gpu  # Enable GPU acceleration
+  ```
+  
+  **Location**: `run_patchcore.py:257`
+  
+  **Benefits**:
+  - 5-10x faster inference
+  - Essential for real-time applications
+  
+  **Requirements**:
+  - Additional GPU memory (~500 MB per model)
+  - FAISS GPU support installed
+</ParamField>
+
+<ParamField path="--faiss_num_workers" type="int" default="8">
+  Number of CPU threads for FAISS operations.
+  
+  ```bash
+  --faiss_num_workers 8  # 8 threads
+  ```
+  
+  **Location**: `run_patchcore.py:258`
+  
+  Only relevant when not using `--faiss_on_gpu`.
+</ParamField>
+
+## Sampler Arguments
+
+Controls coreset subsampling of the feature memory bank.
+
+<ParamField path="name" type="string" required>
+  Coreset sampling algorithm.
+  
+  ```bash
+  sampler [...] approx_greedy_coreset
+  ```
+  
+  **Location**: `run_patchcore.py:319`
+  
+  **Options**:
+  
+  <Tabs>
+    <Tab title="approx_greedy_coreset">
+      **Approximate Greedy Coreset Sampling** (recommended)
+      
+      ```bash
+      sampler -p 0.01 approx_greedy_coreset
+      ```
+      
+      **From ApproximateGreedyCoresetSampler** (`sampler.py:118-171`):
+      - Uses approximate distance matrix (10 starting points)
+      - Much faster than exact greedy
+      - Minimal performance loss
+      
+      **Speed**: ~1-2 min for 1% of ~17k features
+    </Tab>
+    
+    <Tab title="greedy_coreset">
+      **Exact Greedy Coreset Sampling**
+      
+      ```bash
+      sampler -p 0.01 greedy_coreset
+      ```
+      
+      **From GreedyCoresetSampler** (`sampler.py:39-116`):
+      - Computes full N×N distance matrix
+      - Exact greedy selection
+      - Very slow and memory-intensive
+      
+      **Speed**: ~10-30 min for 1% of ~17k features
+      
+      <Warning>
+        Not recommended for large datasets. Use `approx_greedy_coreset` instead.
+      </Warning>
+    </Tab>
+    
+    <Tab title="identity">
+      **No Sampling** (identity sampler)
+      
+      ```bash
+      sampler identity
+      ```
+      
+      **From IdentitySampler** (`sampler.py:9-13`):
+      - Keeps all features (no subsampling)
+      - Maximum performance but huge memory
+      - Memory bank can be 10-50 GB per category
+      
+      Only use for baseline comparisons.
+    </Tab>
+  </Tabs>
+</ParamField>
+
+<ParamField path="-p, --percentage" type="float" default="0.1">
+  Percentage of features to keep after sampling.
+  
+  ```bash
+  sampler -p 0.1 approx_greedy_coreset   # 10%
+  sampler -p 0.01 approx_greedy_coreset  # 1% (recommended)
+  sampler -p 0.001 approx_greedy_coreset # 0.1% (extreme)
+  ```
+  
+  **Location**: `run_patchcore.py:320`
+  
+  **Trade-offs**:
+  
+  | Percentage | Model Size | Performance | Inference Speed |
+  |------------|------------|-------------|------------------|
+  | 10% (0.1) | ~500 MB | Excellent | Slower |
+  | 1% (0.01) | ~50 MB | Excellent (-0.1%) | Fast |
+  | 0.1% (0.001) | ~5 MB | Good (-0.5%) | Very fast |
+  
+  **Recommendation**: Use 1% (`-p 0.01`) for production - excellent balance.
+</ParamField>
+
+## Dataset Arguments
+
+Controls data loading and preprocessing.
+
+<ParamField path="name" type="string" required>
+  Dataset type.
+  
+  ```bash
+  dataset [...] mvtec /path/to/data
+  ```
+  
+  **Location**: `run_patchcore.py:334`
+  
+  Currently only `mvtec` is supported. Custom datasets need implementation.
+</ParamField>
+
+<ParamField path="data_path" type="path" required>
+  Path to dataset root directory.
+  
+  ```bash
+  dataset [...] mvtec /path/to/mvtec
+  ```
+  
+  **Location**: `run_patchcore.py:335`
+  
+  Must contain subdirectories for each category (see [MVTec Setup](/training/mvtec-setup)).
+</ParamField>
+
+<ParamField path="-d, --subdatasets" type="string" required>
+  MVTec category names to train on.
+  
+  ```bash Single category
+  dataset [...] -d bottle mvtec /path/to/mvtec
+  ```
+  
+  ```bash Multiple categories
+  dataset [...] -d bottle -d cable -d capsule mvtec /path/to/mvtec
+  ```
+  
+  **Location**: `run_patchcore.py:336`
+  
+  **Valid categories** (from `mvtec.py:8-24`):
+  - `bottle`, `cable`, `capsule`, `carpet`, `grid`
+  - `hazelnut`, `leather`, `metal_nut`, `pill`, `screw`
+  - `tile`, `toothbrush`, `transistor`, `wood`, `zipper`
+</ParamField>
+
+### Image Preprocessing
+
+<ParamField path="--resize" type="int" default="256">
+  Initial resize dimension (before center crop).
+  
+  ```bash
+  --resize 256  # For 224x224 final images
+  --resize 366  # For 320x320 final images
+  ```
+  
+  **Location**: `run_patchcore.py:340`
+  
+  **From MVTecDataset** (`mvtec.py:74-87`):
+  1. Load image
+  2. `transforms.Resize(resize)` → Resize to (resize, resize)
+  3. `transforms.CenterCrop(imagesize)` → Crop to (imagesize, imagesize)
+  
+  Common combinations:
+  - Resize 256 → Crop 224
+  - Resize 366 → Crop 320
+</ParamField>
+
+<ParamField path="--imagesize" type="int" default="224">
+  Final image size after center crop (input to backbone).
+  
+  ```bash
+  --imagesize 224  # Standard
+  --imagesize 320  # Higher resolution
+  ```
+  
+  **Location**: `run_patchcore.py:341`
+  
+  **Impact**:
+  - **224**: Standard ImageNet size, fastest
+  - **320**: Better localization, 1.5-2x slower
+  - **Higher**: Requires more GPU memory
+</ParamField>
+
+<ParamField path="--augment" type="flag">
+  Enable data augmentation during training.
+  
+  ```bash
+  --augment  # Enable augmentation
+  ```
+  
+  **Location**: `run_patchcore.py:342`
+  
+  <Warning>
+    Data augmentation is typically **not used** with PatchCore, as the method assumes consistent image distributions. Only use for experimentation.
+  </Warning>
+</ParamField>
+
+### Data Loading
+
+<ParamField path="--batch_size" type="int" default="2">
+  Number of images per batch.
+  
+  ```bash
+  --batch_size 2  # Default
+  --batch_size 1  # Reduce for OOM issues
+  --batch_size 8  # Increase if memory allows
+  ```
+  
+  **Location**: `run_patchcore.py:338`
+  
+  Larger batches can speed up training but require more GPU memory.
+</ParamField>
+
+<ParamField path="--num_workers" type="int" default="8">
+  Number of CPU workers for data loading.
+  
+  ```bash
+  --num_workers 8   # 8 parallel workers
+  --num_workers 4   # Fewer workers if CPU-constrained
+  ```
+  
+  **Location**: `run_patchcore.py:339`
+  
+  More workers = faster data loading, but uses more CPU/RAM.
+</ParamField>
+
+<ParamField path="--train_val_split" type="float" default="1.0">
+  Fraction of training data to use for training (vs. validation).
+  
+  ```bash
+  --train_val_split 1.0   # Use all training data
+  --train_val_split 0.8   # 80% train, 20% validation
+  ```
+  
+  **Location**: `run_patchcore.py:337`
+  
+  Typically use 1.0 (all data for training, no validation split).
+</ParamField>
+
+## Configuration Examples
+
+Here are complete, working configurations for common scenarios:
+
+<AccordionGroup>
+  <Accordion title="Minimal Configuration">
+    Simplest possible training command:
+    
+    ```bash
+    python bin/run_patchcore.py results \
+    patch_core -b wideresnet50 -le layer2 -le layer3 \
+      --pretrain_embed_dimension 1024 --target_embed_dimension 1024 \
+      --anomaly_scorer_num_nn 1 --patchsize 3 \
+    sampler -p 0.1 approx_greedy_coreset \
+    dataset --resize 256 --imagesize 224 -d bottle mvtec /path/to/mvtec
+    ```
+    
+    Uses all defaults, trains single category.
+  </Accordion>
+  
+  <Accordion title="Production Baseline">
+    Recommended production configuration (99.2% AUROC):
+    
+    ```bash
+    python bin/run_patchcore.py \
+      --gpu 0 --seed 0 --save_patchcore_model \
+      --log_group IM224_WR50_Production --log_project MVTecAD \
+      results \
+    patch_core \
+      -b wideresnet50 -le layer2 -le layer3 --faiss_on_gpu \
+      --pretrain_embed_dimension 1024 --target_embed_dimension 1024 \
+      --anomaly_scorer_num_nn 1 --patchsize 3 \
+    sampler -p 0.01 approx_greedy_coreset \
+    dataset --resize 256 --imagesize 224 --batch_size 2 --num_workers 8 \
+      -d bottle -d cable [...all categories...] mvtec /path/to/mvtec
+    ```
+  </Accordion>
+  
+  <Accordion title="Maximum Performance">
+    Best performance configuration (99.6% AUROC):
+    
+    ```bash
+    python bin/run_patchcore.py \
+      --gpu 0 --seed 40 --save_patchcore_model \
+      --log_group IM320_Ensemble_Best --log_project MVTecAD \
+      results \
+    patch_core \
+      -b wideresnet101 -b resnext101 -b densenet201 \
+      -le 0.layer2 -le 0.layer3 \
+      -le 1.layer2 -le 1.layer3 \
+      -le 2.features.denseblock2 -le 2.features.denseblock3 \
+      --faiss_on_gpu \
+      --pretrain_embed_dimension 1024 --target_embed_dimension 384 \
+      --anomaly_scorer_num_nn 1 --patchsize 3 \
+    sampler -p 0.01 approx_greedy_coreset \
+    dataset --resize 366 --imagesize 320 --batch_size 2 --num_workers 8 \
+      -d bottle -d cable [...all categories...] mvtec /path/to/mvtec
+    ```
+  </Accordion>
+  
+  <Accordion title="Memory-Constrained">
+    Configuration for limited GPU memory (under 11 GB):
+    
+    ```bash
+    python bin/run_patchcore.py \
+      --gpu 0 --seed 0 --save_patchcore_model \
+      results \
+    patch_core \
+      -b resnet50 -le layer2 -le layer3 \
+      --pretrain_embed_dimension 1024 --target_embed_dimension 512 \
+      --anomaly_scorer_num_nn 1 --patchsize 3 \
+    sampler -p 0.01 approx_greedy_coreset \
+    dataset --resize 256 --imagesize 224 --batch_size 1 --num_workers 4 \
+      -d bottle mvtec /path/to/mvtec
+    ```
+    
+    Changes:
+    - Smaller backbone (ResNet50 vs WideResNet50)
+    - Lower target dimension (512 vs 1024)
+    - Batch size 1
+    - No `--faiss_on_gpu`
+  </Accordion>
+</AccordionGroup>
+
+## Parameter Interactions
+
+### Memory Usage Factors
+
+GPU memory usage is primarily determined by:
+
+```python Memory Formula (approximate)
+GPU_memory = (
+    backbone_memory +           # 1-3 GB depending on architecture
+    batch_size * imagesize^2 * channels * 4 bytes +  # Input images
+    feature_map_memory +        # Depends on layers and dimensions
+    faiss_index_memory          # If --faiss_on_gpu (0.5-2 GB)
+)
+```
+
+**To reduce memory**:
+1. Lower `--batch_size`
+2. Smaller `--imagesize`
+3. Reduce `--target_embed_dimension`
+4. Remove `--faiss_on_gpu`
+5. Use smaller backbone
+
+### Training Time Factors
+
+Training time per category:
+
+```python Time Formula (approximate)
+time_per_category = (
+    num_train_images * feature_extraction_time +  # ~0.1s per image
+    num_features * sampling_percentage * sampling_time  # ~0.001s per feature
+)
+
+# Multiplied by number of backbones for ensemble
+```
+
+**To reduce time**:
+1. Lower sampling percentage (`-p 0.01` vs `-p 0.1`)
+2. Use `approx_greedy_coreset` (not `greedy_coreset`)
+3. Enable `--faiss_on_gpu`
+4. Smaller backbone (ResNet50 vs ResNet101)
+
+### Accuracy vs. Efficiency
+
+| Configuration | AUROC | Speed | Memory | Use Case |
+|---------------|-------|-------|--------|----------|
+| WR50, 224, 10% | 99.2% | Fast | 8 GB | Development |
+| WR50, 224, 1% | 99.2% | Fast | 8 GB | Production |
+| WR50, 320, 1% | 99.3% | Medium | 11 GB | High quality |
+| Ensemble, 224, 1% | 99.3% | Slow | 12 GB | Balanced |
+| Ensemble, 320, 1% | 99.6% | Slowest | 16 GB | Maximum |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Train Single Model" icon="play" href="/training/single-model">
+    Apply these configurations to train your first model
+  </Card>
+  
+  <Card title="Ensemble Training" icon="layer-group" href="/training/ensemble-models">
+    Combine multiple backbones for best performance
+  </Card>
+</CardGroup>

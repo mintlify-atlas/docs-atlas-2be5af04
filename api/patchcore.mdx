@@ -1,0 +1,356 @@
+---
+title: 'PatchCore'
+description: 'Main PatchCore class for anomaly detection and localization'
+icon: 'microchip'
+---
+
+## Overview
+
+The `PatchCore` class is the core implementation of the PatchCore algorithm for industrial anomaly detection. It provides methods for loading models, training on normal data, and predicting anomalies in images.
+
+## Class Definition
+
+```python
+class PatchCore(torch.nn.Module):
+    def __init__(self, device)
+```
+
+PatchCore anomaly detection class that extends `torch.nn.Module`.
+
+<ParamField path="device" type="torch.device" required>
+  The device (CPU or CUDA) on which to run the model.
+</ParamField>
+
+---
+
+## Methods
+
+### load
+
+```python
+def load(
+    self,
+    backbone,
+    layers_to_extract_from,
+    device,
+    input_shape,
+    pretrain_embed_dimension,
+    target_embed_dimension,
+    patchsize=3,
+    patchstride=1,
+    anomaly_score_num_nn=1,
+    featuresampler=patchcore.sampler.IdentitySampler(),
+    nn_method=patchcore.common.FaissNN(False, 4),
+    **kwargs
+)
+```
+
+Initializes the PatchCore model with all required components including backbone, feature aggregation, and scoring mechanisms.
+
+#### Parameters
+
+<ParamField path="backbone" type="torch.nn.Module" required>
+  Pre-trained neural network backbone for feature extraction (e.g., ResNet, WideResNet).
+</ParamField>
+
+<ParamField path="layers_to_extract_from" type="list[str]" required>
+  List of layer names from which to extract features from the backbone.
+</ParamField>
+
+<ParamField path="device" type="torch.device" required>
+  Device on which to load the model.
+</ParamField>
+
+<ParamField path="input_shape" type="tuple" required>
+  Shape of input images (e.g., `(3, 224, 224)` for RGB images).
+</ParamField>
+
+<ParamField path="pretrain_embed_dimension" type="int" required>
+  Dimension to which features are projected before aggregation.
+</ParamField>
+
+<ParamField path="target_embed_dimension" type="int" required>
+  Target dimension for final feature embeddings.
+</ParamField>
+
+<ParamField path="patchsize" type="int" default="3">
+  Size of patches to extract from feature maps.
+</ParamField>
+
+<ParamField path="patchstride" type="int" default="1">
+  Stride for patch extraction from feature maps.
+</ParamField>
+
+<ParamField path="anomaly_score_num_nn" type="int" default="1">
+  Number of nearest neighbors to use for anomaly scoring.
+</ParamField>
+
+<ParamField path="featuresampler" type="Sampler" default="IdentitySampler()">
+  Sampler to use for subsampling features during training. Can be `IdentitySampler`, `GreedyCoresetSampler`, or `RandomSampler`.
+</ParamField>
+
+<ParamField path="nn_method" type="FaissNN" default="FaissNN(False, 4)">
+  Nearest neighbor search method for anomaly scoring.
+</ParamField>
+
+#### Example
+
+```python
+import torch
+import patchcore.backbones
+from patchcore import PatchCore
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = PatchCore(device)
+
+# Load WideResNet50 backbone
+backbone = patchcore.backbones.load("wideresnet50")
+
+model.load(
+    backbone=backbone,
+    layers_to_extract_from=["layer2", "layer3"],
+    device=device,
+    input_shape=(3, 224, 224),
+    pretrain_embed_dimension=1024,
+    target_embed_dimension=1024,
+    patchsize=3,
+    anomaly_score_num_nn=1
+)
+```
+
+---
+
+### fit
+
+```python
+def fit(self, training_data)
+```
+
+Trains the PatchCore model by computing embeddings from normal training data and filling the memory bank.
+
+<ParamField path="training_data" type="DataLoader or iterable" required>
+  DataLoader or iterable containing normal (non-anomalous) training images. Images should be dictionaries with an `"image"` key or raw tensors.
+</ParamField>
+
+#### Example
+
+```python
+from torch.utils.data import DataLoader
+from torchvision import transforms
+
+# Assuming you have a dataset of normal images
+train_loader = DataLoader(train_dataset, batch_size=32)
+
+# Train the model
+model.fit(train_loader)
+```
+
+<Note>
+  The `fit` method only requires normal (non-anomalous) images. PatchCore learns what "normal" looks like and detects deviations from this during inference.
+</Note>
+
+---
+
+### predict
+
+```python
+def predict(self, data)
+```
+
+Computes anomaly scores and segmentation masks for input images.
+
+<ParamField path="data" type="torch.Tensor or DataLoader" required>
+  Input image tensor or DataLoader. If a tensor, shape should be `[B, C, H, W]`. If a DataLoader, images can be dictionaries with `"image"`, `"is_anomaly"`, and `"mask"` keys.
+</ParamField>
+
+#### Returns
+
+<ResponseField name="scores" type="list[float]">
+  List of anomaly scores for each image. Higher scores indicate higher likelihood of anomaly.
+</ResponseField>
+
+<ResponseField name="masks" type="list[np.ndarray]">
+  List of anomaly segmentation masks for each image. Values are normalized between 0 and 1.
+</ResponseField>
+
+<ResponseField name="labels_gt" type="list[int]" optional>
+  Ground truth labels (only returned when using DataLoader with labeled data).
+</ResponseField>
+
+<ResponseField name="masks_gt" type="list[np.ndarray]" optional>
+  Ground truth masks (only returned when using DataLoader with labeled data).
+</ResponseField>
+
+#### Example
+
+```python
+import torch
+
+# Single batch prediction
+test_images = torch.randn(4, 3, 224, 224).to(device)
+scores, masks = model.predict(test_images)
+
+for i, (score, mask) in enumerate(zip(scores, masks)):
+    print(f"Image {i}: Anomaly Score = {score:.4f}")
+    # mask is a numpy array with shape [H, W]
+```
+
+```python
+# DataLoader prediction with ground truth
+test_loader = DataLoader(test_dataset, batch_size=32)
+scores, masks, labels_gt, masks_gt = model.predict(test_loader)
+```
+
+---
+
+### embed
+
+```python
+def embed(self, data)
+```
+
+Extracts feature embeddings from input images without computing anomaly scores.
+
+<ParamField path="data" type="torch.Tensor or DataLoader" required>
+  Input images as tensor `[B, C, H, W]` or DataLoader.
+</ParamField>
+
+#### Returns
+
+<ResponseField name="features" type="np.ndarray or list[np.ndarray]">
+  Feature embeddings extracted from the images. Shape depends on the number of patches and target embedding dimension.
+</ResponseField>
+
+---
+
+### save_to_path
+
+```python
+def save_to_path(self, save_path: str, prepend: str = "") -> None
+```
+
+Saves the trained PatchCore model to disk.
+
+<ParamField path="save_path" type="str" required>
+  Directory path where the model will be saved.
+</ParamField>
+
+<ParamField path="prepend" type="str" default="">
+  Optional prefix to prepend to saved filenames.
+</ParamField>
+
+#### Example
+
+```python
+# Save the trained model
+model.save_to_path("./models/patchcore_trained")
+
+# Save with a prefix
+model.save_to_path("./models", prepend="bottle_")
+```
+
+---
+
+### load_from_path
+
+```python
+def load_from_path(
+    self,
+    load_path: str,
+    device: torch.device,
+    nn_method: patchcore.common.FaissNN,
+    prepend: str = ""
+) -> None
+```
+
+Loads a previously saved PatchCore model from disk.
+
+<ParamField path="load_path" type="str" required>
+  Directory path from which to load the model.
+</ParamField>
+
+<ParamField path="device" type="torch.device" required>
+  Device on which to load the model.
+</ParamField>
+
+<ParamField path="nn_method" type="FaissNN" required>
+  Nearest neighbor search method to use.
+</ParamField>
+
+<ParamField path="prepend" type="str" default="">
+  Optional prefix used when saving the model.
+</ParamField>
+
+#### Example
+
+```python
+import torch
+from patchcore import PatchCore
+import patchcore.common
+
+device = torch.device("cuda")
+model = PatchCore(device)
+
+nn_method = patchcore.common.FaissNN(False, 4)
+model.load_from_path(
+    "./models/patchcore_trained",
+    device=device,
+    nn_method=nn_method
+)
+
+# Now you can use the model for prediction
+scores, masks = model.predict(test_images)
+```
+
+---
+
+## PatchMaker Class
+
+Internal utility class for patch extraction and scoring.
+
+```python
+class PatchMaker:
+    def __init__(self, patchsize, stride=None)
+```
+
+<ParamField path="patchsize" type="int" required>
+  Size of patches to extract.
+</ParamField>
+
+<ParamField path="stride" type="int" optional>
+  Stride for patch extraction. If None, defaults to patchsize.
+</ParamField>
+
+### Methods
+
+#### patchify
+
+```python
+def patchify(self, features, return_spatial_info=False)
+```
+
+Converts a feature tensor into patches.
+
+<ParamField path="features" type="torch.Tensor" required>
+  Input feature tensor with shape `[B, C, H, W]`.
+</ParamField>
+
+<ParamField path="return_spatial_info" type="bool" default="False">
+  Whether to return spatial information about patches.
+</ParamField>
+
+#### unpatch_scores
+
+```python
+def unpatch_scores(self, x, batchsize)
+```
+
+Reshapes patch scores back to batch format.
+
+#### score
+
+```python
+def score(self, x)
+```
+
+Aggregates patch scores to produce image-level scores by taking the maximum across dimensions.

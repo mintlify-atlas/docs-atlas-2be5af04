@@ -1,0 +1,366 @@
+---
+title: 'load_and_evaluate_patchcore.py'
+description: 'Load and evaluate pre-trained PatchCore models'
+icon: 'flask'
+---
+
+## Overview
+
+The `load_and_evaluate_patchcore.py` script loads pre-trained PatchCore models and evaluates them on test datasets. This is useful for:
+
+- Testing saved models without retraining
+- Evaluating on new data
+- Benchmarking model performance
+- Generating segmentation visualizations
+
+Unlike `run_patchcore.py`, this script only performs inference and evaluation—no training occurs.
+
+## Command Structure
+
+```bash
+python bin/load_and_evaluate_patchcore.py [MAIN_OPTIONS] RESULTS_PATH \
+  patch_core_loader [LOADER_OPTIONS] \
+  dataset [DATASET_OPTIONS] DATASET_NAME DATA_PATH
+```
+
+## Main Command
+
+### Arguments
+
+<ParamField path="results_path" type="string" required>
+  Path where evaluation results and metrics will be saved
+</ParamField>
+
+### Options
+
+<ParamField path="--gpu" type="int" default="0">
+  GPU device ID(s) to use for evaluation. Can specify multiple GPUs by repeating the flag.
+  
+  ```bash
+  --gpu 0  # Use GPU 0
+  ```
+</ParamField>
+
+<ParamField path="--seed" type="int" default="0">
+  Random seed for reproducibility
+</ParamField>
+
+<ParamField path="--save_segmentation_images" type="flag">
+  Save visualization images showing anomaly segmentation results
+</ParamField>
+
+<Note>
+  Unlike `run_patchcore.py`, this script does not have `--log_group`, `--log_project`, or `--save_patchcore_model` options since it only loads existing models.
+</Note>
+
+---
+
+## Subcommand: patch_core_loader
+
+Loads pre-trained PatchCore models from disk.
+
+### Options
+
+<ParamField path="--patch_core_paths" type="string" multiple required>
+  Short flag: `-p`
+  
+  Path(s) to saved PatchCore model directories. Each path should point to a directory containing `.faiss` and `.pkl` files.
+  
+  The loader automatically detects:
+  - **Single models**: Directory with one `.faiss` file
+  - **Ensemble models**: Directory with multiple `.faiss` files named `Ensemble-{i}-{n}_*.faiss`
+  
+  ```bash
+  # Single model
+  -p /path/to/models/mvtec_bottle
+  
+  # Multiple categories (evaluated separately)
+  -p /path/to/models/mvtec_bottle \
+  -p /path/to/models/mvtec_cable \
+  -p /path/to/models/mvtec_capsule
+  ```
+</ParamField>
+
+<ParamField path="--faiss_on_gpu" type="flag">
+  Use GPU-accelerated FAISS for nearest neighbor search. Significantly speeds up evaluation.
+</ParamField>
+
+<ParamField path="--faiss_num_workers" type="int" default="8">
+  Number of CPU workers for FAISS operations
+</ParamField>
+
+---
+
+## Subcommand: dataset
+
+Configures dataset loading for evaluation.
+
+### Arguments
+
+<ParamField path="name" type="string" required>
+  Dataset type. Currently supported: `mvtec`
+</ParamField>
+
+<ParamField path="data_path" type="path" required>
+  Path to the dataset root directory. Must exist.
+</ParamField>
+
+### Options
+
+<ParamField path="--subdatasets" type="string" multiple required>
+  Short flag: `-d`
+  
+  Dataset categories to evaluate on. Should match the categories used during training.
+  
+  For MVTec AD:
+  `bottle`, `cable`, `capsule`, `carpet`, `grid`, `hazelnut`, `leather`, `metal_nut`, `pill`, `screw`, `tile`, `toothbrush`, `transistor`, `wood`, `zipper`
+  
+  ```bash
+  -d bottle -d cable -d capsule
+  ```
+</ParamField>
+
+<ParamField path="--batch_size" type="int" default="1">
+  Batch size for data loading during evaluation. Default is 1 for evaluation.
+</ParamField>
+
+<ParamField path="--num_workers" type="int" default="8">
+  Number of worker processes for data loading
+</ParamField>
+
+<ParamField path="--resize" type="int" default="256">
+  Image resize dimension (before center cropping). Must match training configuration.
+</ParamField>
+
+<ParamField path="--imagesize" type="int" default="224">
+  Final image size after center cropping. Must match training configuration.
+  
+  - `224` - Standard ImageNet size
+  - `320` - Higher resolution models
+</ParamField>
+
+<ParamField path="--augment" type="flag">
+  Apply data augmentation during evaluation (typically not used)
+</ParamField>
+
+<Warning>
+  The `--resize` and `--imagesize` parameters must match the values used during training, otherwise evaluation results will be incorrect.
+</Warning>
+
+---
+
+## Examples
+
+### Evaluate Single Model
+
+Evaluate a single trained model on one category:
+
+```bash
+python bin/load_and_evaluate_patchcore.py \
+  --gpu 0 \
+  --seed 0 \
+  results/evaluation \
+  patch_core_loader \
+    -p /path/to/models/mvtec_bottle \
+    --faiss_on_gpu \
+  dataset \
+    --resize 256 \
+    --imagesize 224 \
+    -d bottle \
+    mvtec /path/to/mvtec
+```
+
+### Evaluate Multiple Categories
+
+Evaluate models for all 15 MVTec AD categories (from sample script):
+
+```bash
+# Define paths
+DATAPATH=/path/to/mvtec
+LOADPATH=/path/to/pretrained/models
+MODELFOLDER=IM320_Ensemble_L2-3_P001_D1024-384_PS-3_AN-1
+
+# Categories
+DATASETS=(bottle cable capsule carpet grid hazelnut leather \
+          metal_nut pill screw tile toothbrush transistor wood zipper)
+
+# Build model paths
+MODEL_FLAGS=()
+for dataset in "${DATASETS[@]}"; do
+  MODEL_FLAGS+=(-p "$LOADPATH/$MODELFOLDER/models/mvtec_$dataset")
+done
+
+# Build dataset flags
+DATASET_FLAGS=()
+for dataset in "${DATASETS[@]}"; do
+  DATASET_FLAGS+=(-d "$dataset")
+done
+
+# Run evaluation
+python bin/load_and_evaluate_patchcore.py \
+  --gpu 0 \
+  --seed 0 \
+  results/evaluated_results/$MODELFOLDER \
+  patch_core_loader "${MODEL_FLAGS[@]}" --faiss_on_gpu \
+  dataset --resize 366 --imagesize 320 "${DATASET_FLAGS[@]}" mvtec $DATAPATH
+```
+
+### Evaluate with Segmentation Visualization
+
+Generate visualization images during evaluation:
+
+```bash
+python bin/load_and_evaluate_patchcore.py \
+  --gpu 0 \
+  --seed 0 \
+  --save_segmentation_images \
+  results/evaluation_with_images \
+  patch_core_loader \
+    -p /path/to/models/mvtec_bottle \
+    --faiss_on_gpu \
+  dataset \
+    --resize 256 \
+    --imagesize 224 \
+    -d bottle \
+    mvtec /path/to/mvtec
+```
+
+### Evaluate IM224 Model
+
+For models trained at 224x224 resolution:
+
+```bash
+python bin/load_and_evaluate_patchcore.py \
+  --gpu 0 \
+  --seed 0 \
+  results/eval_im224 \
+  patch_core_loader \
+    -p /path/to/models/IM224/mvtec_bottle \
+    --faiss_on_gpu \
+  dataset \
+    --resize 256 \
+    --imagesize 224 \
+    -d bottle \
+    mvtec /path/to/mvtec
+```
+
+### Evaluate IM320 Model
+
+For models trained at 320x320 resolution:
+
+```bash
+python bin/load_and_evaluate_patchcore.py \
+  --gpu 0 \
+  --seed 0 \
+  results/eval_im320 \
+  patch_core_loader \
+    -p /path/to/models/IM320/mvtec_bottle \
+    --faiss_on_gpu \
+  dataset \
+    --resize 366 \
+    --imagesize 320 \
+    -d bottle \
+    mvtec /path/to/mvtec
+```
+
+---
+
+## Model Directory Structure
+
+Expected structure for model directories:
+
+### Single Model
+
+```
+mvtec_bottle/
+├── *.faiss           # Nearest neighbor index
+└── *.pkl             # Model parameters
+```
+
+### Ensemble Model
+
+```
+mvtec_bottle/
+├── Ensemble-1-3_*.faiss
+├── Ensemble-1-3_*.pkl
+├── Ensemble-2-3_*.faiss
+├── Ensemble-2-3_*.pkl
+├── Ensemble-3-3_*.faiss
+└── Ensemble-3-3_*.pkl
+```
+
+<Note>
+  The script automatically detects ensemble models by counting `.faiss` files in the directory.
+</Note>
+
+---
+
+## Output Files
+
+The script creates the following structure:
+
+```
+results/
+└── [results_path]/
+    ├── segmentation_images/      # (if --save_segmentation_images)
+    │   └── image_*.png
+    └── results.csv               # Evaluation metrics
+```
+
+## Metrics Computed
+
+The script evaluates the following metrics:
+
+- **Instance AUROC**: Image-level anomaly detection accuracy
+- **Full Pixel AUROC**: Pixel-level segmentation accuracy (all images)
+- **Anomaly Pixel AUROC**: Pixel-level segmentation accuracy (anomalous images only)
+
+Results are saved to `results.csv` with per-dataset and mean scores.
+
+---
+
+## Comparison: run_patchcore.py vs load_and_evaluate_patchcore.py
+
+| Feature | run_patchcore.py | load_and_evaluate_patchcore.py |
+|---------|------------------|--------------------------------|
+| **Training** | ✅ Yes | ❌ No |
+| **Evaluation** | ✅ Yes | ✅ Yes |
+| **Save Models** | ✅ Yes | ❌ No (loads only) |
+| **Subcommands** | `patch_core`, `sampler`, `dataset` | `patch_core_loader`, `dataset` |
+| **Model Config** | Configured via flags | Loaded from saved files |
+| **Use Case** | Train new models | Evaluate existing models |
+| **Default Batch Size** | 2 | 1 |
+
+---
+
+## Tips
+
+<Tip>
+  **Match training config:** Always use the same `--resize` and `--imagesize` values that were used during training
+</Tip>
+
+<Tip>
+  **Batch evaluation:** Use bash loops to evaluate multiple model directories efficiently (see example above)
+</Tip>
+
+<Tip>
+  **GPU acceleration:** Always use `--faiss_on_gpu` for faster evaluation on GPU-enabled systems
+</Tip>
+
+<Tip>
+  **Model organization:** Organize saved models by configuration (e.g., `IM224_WR50_L2-3_P01`) for easy identification
+</Tip>
+
+## Common Issues
+
+<Warning>
+  **Error: "oldString not found in content"** - This typically means the model files are missing or the path is incorrect. Verify that `.faiss` and `.pkl` files exist in the specified directory.
+</Warning>
+
+<Warning>
+  **Mismatched dimensions** - If you get dimension errors, ensure `--imagesize` matches the training configuration.
+</Warning>
+
+<Warning>
+  **Number of models mismatch** - The script requires either equal numbers of models and datasets, or a single model to evaluate across multiple datasets.
+</Warning>

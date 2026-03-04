@@ -1,0 +1,342 @@
+---
+title: Feature Extraction
+description: Multi-scale feature extraction with pretrained backbones
+icon: layer-group
+---
+
+PatchCore leverages pretrained CNN backbones to extract rich, hierarchical features from images. The feature extraction process is central to the algorithm's success, enabling it to capture both semantic and spatial information at multiple scales.
+
+## Overview
+
+Feature extraction in PatchCore happens through several stages:
+
+<Steps>
+  <Step title="Backbone Feature Extraction">
+    Pass images through a pretrained CNN and extract features from intermediate layers
+  </Step>
+  <Step title="Patch-level Aggregation">
+    Convert feature maps into locally aggregated patch representations using unfold operations
+  </Step>
+  <Step title="Multi-scale Alignment">
+    Resize and align features from different layers to the same spatial resolution
+  </Step>
+  <Step title="Dimensionality Reduction">
+    Normalize and reduce feature dimensions for efficient storage and comparison
+  </Step>
+</Steps>
+
+## NetworkFeatureAggregator
+
+The `NetworkFeatureAggregator` class efficiently extracts features from multiple backbone layers:
+
+```python common.py
+class NetworkFeatureAggregator(torch.nn.Module):
+    """Efficient extraction of network features."""
+    
+    def __init__(self, backbone, layers_to_extract_from, device):
+        super(NetworkFeatureAggregator, self).__init__()
+        """Extraction of network features.
+        
+        Runs a network only to the last layer of the list of layers where
+        network features should be extracted from.
+        
+        Args:
+            backbone: torchvision.model
+            layers_to_extract_from: [list of str]
+        """
+        self.layers_to_extract_from = layers_to_extract_from
+        self.backbone = backbone
+        self.device = device
+        # ... setup forward hooks
+```
+
+### Forward Hook Mechanism
+
+PatchCore uses PyTorch's forward hooks to extract intermediate layer outputs without modifying the backbone:
+
+```python common.py
+for extract_layer in layers_to_extract_from:
+    forward_hook = ForwardHook(
+        self.outputs, extract_layer, layers_to_extract_from[-1]
+    )
+    if "." in extract_layer:
+        extract_block, extract_idx = extract_layer.split(".")
+        network_layer = backbone.__dict__["_modules"][extract_block]
+        if extract_idx.isnumeric():
+            extract_idx = int(extract_idx)
+            network_layer = network_layer[extract_idx]
+        else:
+            network_layer = network_layer.__dict__["_modules"][extract_idx]
+    else:
+        network_layer = backbone.__dict__["_modules"][extract_layer]
+    
+    if isinstance(network_layer, torch.nn.Sequential):
+        self.backbone.hook_handles.append(
+            network_layer[-1].register_forward_hook(forward_hook)
+        )
+    else:
+        self.backbone.hook_handles.append(
+            network_layer.register_forward_hook(forward_hook)
+        )
+```
+
+<Note>
+  The hook mechanism allows early stopping - computation halts after the last required layer is reached, saving compute time.
+</Note>
+
+## The _embed() Method
+
+The core feature embedding process happens in the `_embed()` method:
+
+```python patchcore.py
+def _embed(self, images, detach=True, provide_patch_shapes=False):
+    """Returns feature embeddings for images."""
+    
+    def _detach(features):
+        if detach:
+            return [x.detach().cpu().numpy() for x in features]
+        return features
+    
+    _ = self.forward_modules["feature_aggregator"].eval()
+    with torch.no_grad():
+        features = self.forward_modules["feature_aggregator"](images)
+    
+    features = [features[layer] for layer in self.layers_to_extract_from]
+    
+    # Convert to patches
+    features = [
+        self.patch_maker.patchify(x, return_spatial_info=True) for x in features
+    ]
+    patch_shapes = [x[1] for x in features]
+    features = [x[0] for x in features]
+    ref_num_patches = patch_shapes[0]
+```
+
+### Multi-scale Feature Alignment
+
+One of the key innovations is aligning features from different layers to the same spatial resolution:
+
+```python patchcore.py
+for i in range(1, len(features)):
+    _features = features[i]
+    patch_dims = patch_shapes[i]
+    
+    # Reshape to spatial dimensions
+    _features = _features.reshape(
+        _features.shape[0], patch_dims[0], patch_dims[1], *_features.shape[2:]
+    )
+    _features = _features.permute(0, -3, -2, -1, 1, 2)
+    perm_base_shape = _features.shape
+    _features = _features.reshape(-1, *_features.shape[-2:])
+    
+    # Interpolate to reference size
+    _features = F.interpolate(
+        _features.unsqueeze(1),
+        size=(ref_num_patches[0], ref_num_patches[1]),
+        mode="bilinear",
+        align_corners=False,
+    )
+    _features = _features.squeeze(1)
+    _features = _features.reshape(
+        *perm_base_shape[:-2], ref_num_patches[0], ref_num_patches[1]
+    )
+    _features = _features.permute(0, -2, -1, 1, 2, 3)
+    _features = _features.reshape(len(_features), -1, *_features.shape[-3:])
+    features[i] = _features
+```
+
+<Info>
+  Bilinear interpolation is used to resize lower-resolution features to match the highest resolution layer. This preserves spatial correspondence across scales.
+</Info>
+
+## Preprocessing Pipeline
+
+### MeanMapper
+
+The `MeanMapper` module performs adaptive pooling to normalize feature dimensions:
+
+```python common.py
+class MeanMapper(torch.nn.Module):
+    def __init__(self, preprocessing_dim):
+        super(MeanMapper, self).__init__()
+        self.preprocessing_dim = preprocessing_dim
+    
+    def forward(self, features):
+        features = features.reshape(len(features), 1, -1)
+        return F.adaptive_avg_pool1d(features, self.preprocessing_dim).squeeze(1)
+```
+
+### Preprocessing Module
+
+Applies `MeanMapper` to each layer's features:
+
+```python common.py
+class Preprocessing(torch.nn.Module):
+    def __init__(self, input_dims, output_dim):
+        super(Preprocessing, self).__init__()
+        self.input_dims = input_dims
+        self.output_dim = output_dim
+        
+        self.preprocessing_modules = torch.nn.ModuleList()
+        for input_dim in input_dims:
+            module = MeanMapper(output_dim)
+            self.preprocessing_modules.append(module)
+    
+    def forward(self, features):
+        _features = []
+        for module, feature in zip(self.preprocessing_modules, features):
+            _features.append(module(feature))
+        return torch.stack(_features, dim=1)
+```
+
+## Aggregator: Final Feature Fusion
+
+The `Aggregator` combines features from all layers into a single vector:
+
+```python common.py
+class Aggregator(torch.nn.Module):
+    def __init__(self, target_dim):
+        super(Aggregator, self).__init__()
+        self.target_dim = target_dim
+    
+    def forward(self, features):
+        """Returns reshaped and average pooled features."""
+        # batchsize x number_of_layers x input_dim -> batchsize x target_dim
+        features = features.reshape(len(features), 1, -1)
+        features = F.adaptive_avg_pool1d(features, self.target_dim)
+        return features.reshape(len(features), -1)
+```
+
+<Tip>
+  The aggregator uses adaptive average pooling, which automatically handles varying input dimensions and produces a fixed-size output.
+</Tip>
+
+## Supported Backbones
+
+PatchCore supports a wide variety of pretrained backbones:
+
+<Tabs>
+  <Tab title="ResNet Family">
+    - `resnet50`: Standard ResNet-50
+    - `resnet101`: Deeper ResNet-101
+    - `resnext101`: ResNeXt-101 with grouped convolutions
+    - `wideresnet50`: **Recommended** - WideResNet-50 (default)
+    - `wideresnet101`: WideResNet-101
+  </Tab>
+  <Tab title="Vision Transformers">
+    - `vit_small`: ViT Small
+    - `vit_base`: ViT Base
+    - `vit_large`: ViT Large
+    - `vit_deit_base`: DeiT Base
+    - `vit_swin_base`: Swin Transformer Base
+  </Tab>
+  <Tab title="EfficientNet">
+    - `efficientnet_b1` through `efficientnet_b7`
+    - `efficientnetv2_m`: EfficientNetV2 Medium
+    - `efficientnetv2_l`: EfficientNetV2 Large
+  </Tab>
+  <Tab title="Other Architectures">
+    - `densenet121`, `densenet201`: DenseNet variants
+    - `vgg11`, `vgg19`, `vgg19_bn`: VGG networks
+    - `inception_v4`: Inception V4
+  </Tab>
+</Tabs>
+
+Backbones are loaded using the `backbones.py` module:
+
+```python backbones.py
+_BACKBONES = {
+    "wideresnet50": "models.wide_resnet50_2(pretrained=True)",
+    "resnet50": "models.resnet50(pretrained=True)",
+    "vit_base": 'timm.create_model("vit_base_patch16_224", pretrained=True)',
+    # ... more backbones
+}
+
+def load(name):
+    return eval(_BACKBONES[name])
+```
+
+## Layer Selection Strategy
+
+Choosing the right layers is crucial for performance:
+
+<AccordionGroup>
+  <Accordion title="Early Layers (e.g., layer1)">
+    - Capture low-level features (edges, textures)
+    - Higher spatial resolution
+    - Less semantic information
+    - **Best for:** Texture-based defects
+  </Accordion>
+  
+  <Accordion title="Middle Layers (e.g., layer2, layer3)">
+    - **Recommended default**: `layer2` + `layer3`
+    - Balance between semantic and spatial information
+    - Good generalization across defect types
+    - **Best for:** Most industrial inspection tasks
+  </Accordion>
+  
+  <Accordion title="Deep Layers (e.g., layer4)">
+    - High-level semantic features
+    - Lower spatial resolution
+    - Strong classification capability
+    - **Best for:** Object-level anomalies
+  </Accordion>
+</AccordionGroup>
+
+## Feature Dimension Flow
+
+Here's how feature dimensions transform through the pipeline:
+
+```
+Input Image: [B, 3, 224, 224]
+    |
+    v (Backbone layer2)
+[B, 512, 56, 56] (WideResNet50)
+    |
+    v (Patchify with patchsize=3)
+[B*56*56, 512, 3, 3]
+    |
+    v (Preprocessing to 1024)
+[B*56*56, 1024]
+    |
+    v (Aggregator to 1024)
+[B*56*56, 1024]  <- Final patch embeddings
+```
+
+## Complete Embedding Example
+
+Here's a complete example of the embedding process:
+
+```python
+# Initialize PatchCore
+patchcore = PatchCore(device='cuda')
+patchcore.load(
+    backbone=load('wideresnet50'),
+    layers_to_extract_from=['layer2', 'layer3'],
+    device='cuda',
+    input_shape=(3, 224, 224),
+    pretrain_embed_dimension=1024,
+    target_embed_dimension=1024,
+    patchsize=3,
+)
+
+# Extract features
+images = torch.randn(4, 3, 224, 224).cuda()  # Batch of 4 images
+features = patchcore._embed(images)
+# Output shape: [4*56*56, 1024] = [12544, 1024]
+```
+
+<Warning>
+  All features are extracted with `torch.no_grad()` - PatchCore does not perform any backpropagation during training or inference.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Coreset Sampling" icon="filter" href="/concepts/coreset-sampling">
+    Learn how extracted features are subsampled for efficiency
+  </Card>
+  <Card title="Anomaly Scoring" icon="gauge-high" href="/concepts/anomaly-scoring">
+    Understand how features are used to compute anomaly scores
+  </Card>
+</CardGroup>

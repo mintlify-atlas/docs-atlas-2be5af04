@@ -1,80 +1,211 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Get started with PatchCore for industrial anomaly detection in minutes"
 ---
 
-## Get started in three steps
+This quickstart guide will help you train and evaluate your first PatchCore model on the MVTec AD dataset.
 
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+## Prerequisites
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+Make sure you have:
+- Python 3.8 or higher
+- CUDA-compatible GPU (recommended)
+- At least 11GB of GPU memory
 </Note>
+
+## Quick Setup
+
+<Steps>
+  <Step title="Install Dependencies">
+    Clone the repository and install required packages:
+    
+    ```bash
+    git clone https://github.com/amazon-science/patchcore-inspection.git
+    cd patchcore-inspection
+    pip install -r requirements.txt
+    ```
+    
+    <Accordion title="View requirements.txt">
+    ```txt
+    click>= 8.0.3
+    faiss-cpu
+    matplotlib>= 3.5.0
+    pillow>= 8.4.0
+    pretrainedmodels>= 0.7.4
+    torch>= 1.10.0
+    scikit-image>= 0.18.3
+    scikit-learn>= 1.0.1
+    scipy>= 1.7.1
+    torchvision>= 0.11.1
+    tqdm>= 4.62.3
+    ```
+    </Accordion>
+  </Step>
+
+  <Step title="Download MVTec AD Dataset">
+    Download the MVTec AD dataset from the [official website](https://www.mvtec.com/company/research/datasets/mvtec-ad) and extract it.
+    
+    Your dataset structure should look like:
+    
+    ```
+    mvtec/
+    ├── bottle/
+    │   ├── ground_truth/
+    │   ├── test/
+    │   │   ├── good/
+    │   │   ├── broken_large/
+    │   │   └── ...
+    │   └── train/
+    │       └── good/
+    ├── cable/
+    └── ...
+    ```
+    
+    <Note>
+    The dataset contains 15 categories: bottle, cable, capsule, carpet, grid, hazelnut, leather, metal_nut, pill, screw, tile, toothbrush, transistor, wood, and zipper.
+    </Note>
+  </Step>
+
+  <Step title="Set Environment Variable">
+    Set the `PYTHONPATH` to include the source directory:
+    
+    ```bash
+    export PYTHONPATH=src:$PYTHONPATH
+    ```
+  </Step>
+
+  <Step title="Train Your First Model">
+    Train PatchCore on a single category (e.g., "bottle") using WideResNet50:
+    
+    ```bash
+    datapath=/path/to/mvtec
+    
+    python bin/run_patchcore.py --gpu 0 --seed 0 --save_patchcore_model \
+      --log_group IM224_WR50_L2-3_P01_D1024-1024_PS-3_AN-1_S0 \
+      --log_project MVTecAD_Results results \
+      patch_core -b wideresnet50 -le layer2 -le layer3 --faiss_on_gpu \
+      --pretrain_embed_dimension 1024 --target_embed_dimension 1024 \
+      --anomaly_scorer_num_nn 1 --patchsize 3 \
+      sampler -p 0.1 approx_greedy_coreset \
+      dataset --resize 256 --imagesize 224 -d bottle mvtec $datapath
+    ```
+    
+    <Accordion title="Understanding the command">
+    - `--gpu 0`: Use GPU 0
+    - `--seed 0`: Set random seed for reproducibility
+    - `--save_patchcore_model`: Save the trained model
+    - `-b wideresnet50`: Use WideResNet50 backbone (pretrained on ImageNet)
+    - `-le layer2 -le layer3`: Extract features from layer2 and layer3
+    - `--faiss_on_gpu`: Run similarity search on GPU for speed
+    - `--pretrain_embed_dimension 1024`: Backbone feature dimension
+    - `--target_embed_dimension 1024`: Final PatchCore embedding dimension
+    - `--anomaly_scorer_num_nn 1`: Use 1 nearest neighbor for scoring
+    - `--patchsize 3`: Local aggregation neighborhood size
+    - `-p 0.1`: Keep 10% of patches via coreset subsampling
+    - `--resize 256 --imagesize 224`: Resize to 256, then center crop to 224
+    </Accordion>
+  </Step>
+</Steps>
+
+## Expected Output
+
+During training, you'll see output similar to:
+
+```
+Evaluating dataset [mvtec_bottle] (1/1)...
+Training models (1/1)
+Embedding test data with models (1/1)
+Computing evaluation metrics.
+instance_auroc: 1.000
+full_pixel_auroc: 0.988
+anomaly_pixel_auroc: 0.988
+```
+
+<Note>
+**Expected Performance (WideResNet50 baseline on 224x224 images):**
+- Instance AUROC: **99.2%** (image-level anomaly detection)
+- Pixel-wise AUROC: **98.1%** (defect localization)
+- PRO Score: **94.4%**
+</Note>
+
+## Train on All Categories
+
+To train on all 15 MVTec AD categories:
+
+```bash
+datapath=/path/to/mvtec
+datasets=('bottle' 'cable' 'capsule' 'carpet' 'grid' 'hazelnut' \
+          'leather' 'metal_nut' 'pill' 'screw' 'tile' 'toothbrush' \
+          'transistor' 'wood' 'zipper')
+dataset_flags=($(for dataset in "${datasets[@]}"; do echo '-d '$dataset; done))
+
+python bin/run_patchcore.py --gpu 0 --seed 0 --save_patchcore_model \
+  --log_group IM224_WR50_L2-3_P01_D1024-1024_PS-3_AN-1_S0 \
+  --log_project MVTecAD_Results results \
+  patch_core -b wideresnet50 -le layer2 -le layer3 --faiss_on_gpu \
+  --pretrain_embed_dimension 1024 --target_embed_dimension 1024 \
+  --anomaly_scorer_num_nn 1 --patchsize 3 \
+  sampler -p 0.1 approx_greedy_coreset \
+  dataset --resize 256 --imagesize 224 "${dataset_flags[@]}" mvtec $datapath
+```
+
+## Model Output
+
+After training, your results will be saved in:
+
+```
+results/MVTecAD_Results/IM224_WR50_L2-3_P01_D1024-1024_PS-3_AN-1_S0/
+├── models/
+│   └── mvtec_bottle/
+│       ├── nnscorer_search_index.faiss
+│       └── patchcore_params.pkl
+└── results.csv
+```
+
+## Evaluate a Trained Model
+
+To evaluate your trained model:
+
+```bash
+datapath=/path/to/mvtec
+loadpath=results/MVTecAD_Results/IM224_WR50_L2-3_P01_D1024-1024_PS-3_AN-1_S0
+
+python bin/load_and_evaluate_patchcore.py --gpu 0 --seed 0 evaluated_results \
+  patch_core_loader -p $loadpath/models/mvtec_bottle --faiss_on_gpu \
+  dataset --resize 256 --imagesize 224 -d bottle mvtec $datapath
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation Guide" icon="download" href="/installation">
+    Detailed installation instructions and troubleshooting
+  </Card>
+  <Card title="Model Architecture" icon="brain" href="/architecture">
+    Learn how PatchCore works under the hood
+  </Card>
+  <Card title="Training Options" icon="sliders" href="/training">
+    Explore advanced training configurations
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference">
+    Complete API documentation
+  </Card>
+</CardGroup>
+
+## Common Issues
+
+<Warning>
+**GPU Memory Error?** If you encounter out-of-memory errors:
+- Reduce `--imagesize` (e.g., from 224 to 192)
+- Reduce batch size with `--batch_size 1`
+- Use CPU FAISS by removing `--faiss_on_gpu`
+</Warning>
+
+<Accordion title="FAISS not found error">
+If you get "FAISS not found", install the GPU version:
+```bash
+pip uninstall faiss-cpu
+pip install faiss-gpu
+```
+</Accordion>

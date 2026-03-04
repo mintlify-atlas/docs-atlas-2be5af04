@@ -1,0 +1,410 @@
+---
+title: Batch Prediction
+description: Run inference on multiple images using DataLoaders for efficient batch processing
+---
+
+## Overview
+
+PatchCore supports efficient batch prediction on multiple images using PyTorch DataLoaders. This enables processing large datasets with automatic batching, GPU acceleration, and parallel data loading.
+
+## Basic Batch Prediction
+
+The `predict()` method automatically handles both single images and DataLoaders:
+
+```python
+import torch
+import patchcore.patchcore
+
+# Load pretrained model
+patchcore_model = patchcore.patchcore.PatchCore(device)
+patchcore_model.load_from_path(
+    load_path="results/models/mvtec_bottle",
+    device=device,
+    nn_method=nn_method
+)
+
+# Predict on DataLoader
+scores, masks, labels_gt, masks_gt = patchcore_model.predict(test_dataloader)
+```
+
+<Steps>
+  <Step title="Prepare your DataLoader">
+    Create a PyTorch DataLoader with your test images
+  </Step>
+  
+  <Step title="Call predict()">
+    Pass the DataLoader to `predict()` - it automatically detects the type
+  </Step>
+  
+  <Step title="Process results">
+    Receive anomaly scores, segmentation masks, and ground truth labels
+  </Step>
+</Steps>
+
+## DataLoader Configuration
+
+Create a DataLoader for efficient batch processing:
+
+```python
+import torch.utils.data
+from patchcore.datasets.mvtec import MVTecDataset, DatasetSplit
+
+# Create dataset
+test_dataset = MVTecDataset(
+    data_path="/path/to/mvtec",
+    classname="bottle",
+    resize=256,
+    imagesize=224,
+    split=DatasetSplit.TEST,
+    seed=0
+)
+
+# Create DataLoader
+test_dataloader = torch.utils.data.DataLoader(
+    test_dataset,
+    batch_size=8,        # Process 8 images at once
+    shuffle=False,       # Keep original order
+    num_workers=8,       # Parallel data loading
+    pin_memory=True      # Faster GPU transfer
+)
+```
+
+<Note>
+**Batch Size Recommendations:**
+- **224x224 images**: batch_size=8-16
+- **320x320 images**: batch_size=4-8
+- Adjust based on GPU memory (11GB recommended)
+</Note>
+
+## Output Format
+
+The `predict()` method returns four components:
+
+```python
+scores, masks, labels_gt, masks_gt = patchcore_model.predict(test_dataloader)
+```
+
+<Accordion title="scores: List of floats">
+  **Image-level anomaly scores**
+  
+  ```python
+  # One score per image
+  scores = [0.023, 0.891, 0.156, ...]  # Length = number of images
+  ```
+  
+  - Higher scores indicate higher anomaly likelihood
+  - Computed as maximum patch score per image
+  - Range: typically [0, 1] after normalization
+</Accordion>
+
+<Accordion title="masks: List of numpy arrays">
+  **Pixel-level anomaly heatmaps**
+  
+  ```python
+  # One mask per image, resized to input dimensions
+  masks[0].shape  # (224, 224) for 224x224 input
+  ```
+  
+  - Values represent anomaly scores per pixel
+  - Smoothed with Gaussian filter (sigma=4)
+  - Can be thresholded for binary segmentation
+</Accordion>
+
+<Accordion title="labels_gt: List of booleans">
+  **Ground truth anomaly labels**
+  
+  ```python
+  labels_gt = [False, True, False, ...]  # True = anomalous
+  ```
+  
+  - Extracted from dataset metadata
+  - Used for computing evaluation metrics
+  - Empty if ground truth unavailable
+</Accordion>
+
+<Accordion title="masks_gt: List of numpy arrays">
+  **Ground truth segmentation masks**
+  
+  ```python
+  masks_gt[0].shape  # (224, 224)
+  ```
+  
+  - Binary masks indicating defect locations
+  - 1 = anomalous pixel, 0 = normal
+  - Used for pixel-level metrics (AUROC, PRO)
+</Accordion>
+
+## Internal Implementation
+
+The prediction pipeline for DataLoaders (source:patchcore.py:183):
+
+```python
+def _predict_dataloader(self, dataloader):
+    """This function provides anomaly scores/maps for full dataloaders."""
+    _ = self.forward_modules.eval()
+    
+    scores = []
+    masks = []
+    labels_gt = []
+    masks_gt = []
+    
+    with tqdm.tqdm(dataloader, desc="Inferring...", leave=False) as data_iterator:
+        for image in data_iterator:
+            if isinstance(image, dict):
+                labels_gt.extend(image["is_anomaly"].numpy().tolist())
+                masks_gt.extend(image["mask"].numpy().tolist())
+                image = image["image"]
+            
+            _scores, _masks = self._predict(image)
+            for score, mask in zip(_scores, _masks):
+                scores.append(score)
+                masks.append(mask)
+                
+    return scores, masks, labels_gt, masks_gt
+```
+
+<Steps>
+  <Step title="Set evaluation mode">
+    Disable dropout and batch normalization updates
+  </Step>
+  
+  <Step title="Iterate through batches">
+    Process each batch with progress tracking
+  </Step>
+  
+  <Step title="Extract metadata">
+    Pull ground truth labels and masks from dataset
+  </Step>
+  
+  <Step title="Run inference">
+    Call `_predict()` on each batch of images
+  </Step>
+  
+  <Step title="Accumulate results">
+    Collect all scores and masks into lists
+  </Step>
+</Steps>
+
+## Single Batch Prediction
+
+For processing individual batches, use `_predict()` directly:
+
+```python
+import torch
+
+# Load batch of images (e.g., from DataLoader)
+images = next(iter(test_dataloader))  # Shape: (batch_size, 3, 224, 224)
+
+# Predict on single batch
+scores, masks = patchcore_model._predict(images)
+
+# Results
+print(f"Batch size: {len(scores)}")
+print(f"Scores: {scores}")
+print(f"Mask shape: {masks[0].shape}")
+```
+
+Output:
+```
+Batch size: 8
+Scores: [0.023, 0.156, 0.891, 0.034, 0.567, 0.012, 0.789, 0.045]
+Mask shape: (224, 224)
+```
+
+## Processing Custom Images
+
+To predict on custom images without creating a dataset:
+
+```python
+from PIL import Image
+import torchvision.transforms as transforms
+
+# Define preprocessing
+transform = transforms.Compose([
+    transforms.Resize(256),
+    transforms.CenterCrop(224),
+    transforms.ToTensor(),
+    transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
+    )
+])
+
+# Load and preprocess images
+image_paths = ["test1.jpg", "test2.jpg", "test3.jpg"]
+images = []
+for path in image_paths:
+    img = Image.open(path).convert("RGB")
+    img_tensor = transform(img)
+    images.append(img_tensor)
+
+# Stack into batch
+batch = torch.stack(images).to(device)
+
+# Predict
+scores, masks = patchcore_model._predict(batch)
+```
+
+<Warning>
+Ensure your preprocessing matches the training configuration:
+- Same image size (resize, crop)
+- Same normalization (ImageNet stats)
+- RGB format (3 channels)
+</Warning>
+
+## Feature Extraction Details
+
+Under the hood, batch prediction extracts and processes features:
+
+```python
+def _predict(self, images):
+    """Infer score and mask for a batch of images.""" 
+    images = images.to(torch.float).to(self.device)
+    _ = self.forward_modules.eval()
+    
+    batchsize = images.shape[0]
+    with torch.no_grad():
+        # Extract patch features from backbone
+        features, patch_shapes = self._embed(images, provide_patch_shapes=True)
+        features = np.asarray(features)
+        
+        # Compute anomaly scores via nearest neighbor
+        patch_scores = image_scores = self.anomaly_scorer.predict([features])[0]
+        
+        # Aggregate patch scores to image scores
+        image_scores = self.patch_maker.unpatch_scores(
+            image_scores, batchsize=batchsize
+        )
+        image_scores = image_scores.reshape(*image_scores.shape[:2], -1)
+        image_scores = self.patch_maker.score(image_scores)
+        
+        # Reshape patch scores to spatial dimensions
+        patch_scores = self.patch_maker.unpatch_scores(
+            patch_scores, batchsize=batchsize
+        )
+        scales = patch_shapes[0]
+        patch_scores = patch_scores.reshape(batchsize, scales[0], scales[1])
+        
+        # Upsample to input resolution
+        masks = self.anomaly_segmentor.convert_to_segmentation(patch_scores)
+    
+    return [score for score in image_scores], [mask for mask in masks]
+```
+
+## Performance Optimization
+
+### GPU Memory Management
+
+For large datasets, manage GPU memory carefully:
+
+```python
+import gc
+
+# Clear cache before prediction
+torch.cuda.empty_cache()
+
+# Run prediction in chunks
+chunk_size = 100
+all_scores = []
+all_masks = []
+
+for i in range(0, len(dataset), chunk_size):
+    subset = torch.utils.data.Subset(dataset, range(i, min(i+chunk_size, len(dataset))))
+    loader = torch.utils.data.DataLoader(subset, batch_size=8)
+    
+    scores, masks, _, _ = patchcore_model.predict(loader)
+    all_scores.extend(scores)
+    all_masks.extend(masks)
+    
+    # Clean up
+    torch.cuda.empty_cache()
+    gc.collect()
+```
+
+### Parallel Data Loading
+
+Speed up preprocessing with multiple workers:
+
+```python
+test_dataloader = torch.utils.data.DataLoader(
+    test_dataset,
+    batch_size=8,
+    num_workers=8,        # Use 8 CPU threads
+    pin_memory=True,      # Faster GPU transfer
+    prefetch_factor=2     # Prefetch 2 batches per worker
+)
+```
+
+<Note>
+**Worker Recommendations:**
+- Set `num_workers` to number of CPU cores (typically 4-16)
+- Higher values speed up data loading but use more memory
+- Set to 0 for debugging to see data loading errors
+</Note>
+
+## Interpreting Results
+
+### Anomaly Score Thresholding
+
+Determine optimal threshold for classification:
+
+```python
+import numpy as np
+from sklearn.metrics import roc_curve
+
+# Compute ROC curve
+fpr, tpr, thresholds = roc_curve(labels_gt, scores)
+
+# Find threshold at 95% TPR
+target_tpr = 0.95
+idx = np.argmin(np.abs(tpr - target_tpr))
+optimal_threshold = thresholds[idx]
+
+print(f"Threshold at {target_tpr*100}% TPR: {optimal_threshold:.3f}")
+print(f"Corresponding FPR: {fpr[idx]:.3f}")
+
+# Apply threshold
+predictions = [score > optimal_threshold for score in scores]
+```
+
+### Segmentation Mask Visualization
+
+Visualize anomaly heatmaps:
+
+```python
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Get prediction for first image
+image_idx = 0
+score = scores[image_idx]
+mask = masks[image_idx]
+
+# Plot
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+# Original image (denormalized)
+axes[0].imshow(original_image)
+axes[0].set_title("Original Image")
+axes[0].axis('off')
+
+# Anomaly heatmap
+im = axes[1].imshow(mask, cmap='jet', vmin=0, vmax=1)
+axes[1].set_title(f"Anomaly Score: {score:.3f}")
+axes[1].axis('off')
+plt.colorbar(im, ax=axes[1])
+
+plt.tight_layout()
+plt.show()
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Load Models" icon="folder-open" href="/inference/loading-models">
+    Learn how to load pretrained models
+  </Card>
+  <Card title="Evaluation Metrics" icon="chart-line" href="/inference/evaluation">
+    Compute AUROC and PRO scores
+  </Card>
+</CardGroup>

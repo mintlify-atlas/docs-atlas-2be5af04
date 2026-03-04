@@ -1,0 +1,200 @@
+---
+title: 'Training Overview'
+description: 'Understand the PatchCore training workflow, memory requirements, and hardware recommendations'
+icon: 'graduation-cap'
+---
+
+## What is PatchCore Training?
+
+PatchCore doesn't use traditional neural network training with backpropagation. Instead, it extracts and stores a memory bank of feature representations from normal (defect-free) training images.
+
+<Note>
+  **Training** in PatchCore refers to:
+  1. Extracting features from training images using a pretrained CNN backbone
+  2. Performing local aggregation on patch features
+  3. Subsampling the feature set using coreset selection
+  4. Building a nearest-neighbor search index for anomaly detection
+</Note>
+
+## Training Workflow
+
+<Steps>
+  <Step title="Prepare MVTec AD Dataset">
+    Download and organize the MVTec AD dataset with proper directory structure.
+    
+    See [MVTec Setup](/training/mvtec-setup) for detailed instructions.
+  </Step>
+  
+  <Step title="Choose Model Configuration">
+    Select backbone network, layers to extract features from, and sampling parameters.
+    
+    - **Single model**: Use one backbone (e.g., WideResNet50) for faster training
+    - **Ensemble**: Use multiple backbones for better performance
+  </Step>
+  
+  <Step title="Run Training">
+    Execute the training command. PatchCore will:
+    - Load training images (only "good" samples)
+    - Extract features from selected backbone layers
+    - Apply coreset subsampling to reduce memory
+    - Build FAISS nearest-neighbor index
+  </Step>
+  
+  <Step title="Save Model">
+    Use `--save_patchcore_model` flag to save:
+    - Feature memory bank
+    - FAISS search index
+    - Model parameters (backbone, layers, dimensions)
+  </Step>
+</Steps>
+
+## Performance Characteristics
+
+### Training Time
+
+PatchCore training is fast compared to traditional deep learning:
+
+- **Single model (WideResNet50)**: ~5-10 minutes per MVTec category on GPU
+- **Ensemble (3 backbones)**: ~15-30 minutes per category on GPU
+- Time scales with:
+  - Image resolution (224x224 vs 320x320)
+  - Number of training samples
+  - Coreset sampling percentage
+
+### Memory Requirements
+
+<CardGroup cols={2}>
+  <Card title="GPU Memory" icon="memory">
+    - **11GB recommended** for most experiments
+    - **16GB required** for:
+      - Large image sizes (320x320 or higher)
+      - Ensemble models with 3+ backbones
+      - Higher embedding dimensions
+  </Card>
+  
+  <Card title="Disk Storage" icon="hard-drive">
+    - **Per model**: 50-500 MB depending on:
+      - Coreset sampling percentage (1% vs 10%)
+      - Embedding dimensions
+      - Number of training samples
+    - **15 MVTec categories**: 1-7 GB total
+  </Card>
+</CardGroup>
+
+## Hardware Recommendations
+
+### Minimum Requirements
+
+```yaml Minimum Configuration
+GPU: NVIDIA GPU with 11GB VRAM (e.g., RTX 2080 Ti, RTX 3060)
+CPU: 4+ cores
+RAM: 16 GB
+Storage: 50 GB (dataset + models)
+```
+
+### Recommended for Production
+
+```yaml Recommended Configuration
+GPU: NVIDIA GPU with 16GB+ VRAM (e.g., RTX 3090, A5000, V100)
+CPU: 8+ cores
+RAM: 32 GB
+Storage: 100 GB SSD
+```
+
+<Warning>
+  Significantly large input images (>512x512) will require more GPU memory and may not fit on 11GB GPUs.
+</Warning>
+
+## Key Configuration Decisions
+
+### Backbone Selection
+
+The choice of backbone affects both performance and speed:
+
+| Backbone | Performance | Speed | Memory |
+|----------|-------------|-------|--------|
+| WideResNet50 | Good | Fast | Moderate |
+| WideResNet101 | Better | Slower | Higher |
+| Ensemble (3 models) | Best | Slowest | Highest |
+
+### Coreset Sampling Percentage
+
+Controls the trade-off between memory usage and performance:
+
+- **10% (`-p 0.1`)**: Good for development and testing
+- **1% (`-p 0.01`)**: Recommended for production (minimal performance loss)
+- Lower percentages = less memory, faster inference, minimal accuracy impact
+
+<Note>
+  In the original paper, 1% coreset sampling achieved 99.2% AUROC on MVTec AD with WideResNet50.
+</Note>
+
+### Image Resolution
+
+Higher resolution improves localization but increases compute:
+
+- **224x224**: Baseline resolution, fastest training
+- **320x320**: Better localization, ~1.5x slower
+- **Higher**: Possible but requires more GPU memory
+
+## Expected Results
+
+Using the recommended configurations from [single-model](/training/single-model) and [ensemble-models](/training/ensemble-models):
+
+<AccordionGroup>
+  <Accordion title="WideResNet50 Baseline (224x224)">
+    ```yaml Performance Metrics
+    Instance AUROC: 99.2%
+    Pixel-wise AUROC: 98.1%
+    PRO Score: 94.4%
+    
+    Training time: ~1-2 hours (all 15 categories)
+    GPU memory: 8-10 GB
+    Model size: 1-2 GB total
+    ```
+  </Accordion>
+  
+  <Accordion title="Ensemble Model (224x224)">
+    ```yaml Performance Metrics
+    Instance AUROC: 99.3%
+    Pixel-wise AUROC: 98.1%
+    PRO Score: 94.2%
+    
+    Training time: ~3-5 hours (all 15 categories)
+    GPU memory: 10-12 GB
+    Model size: 4-7 GB total
+    ```
+  </Accordion>
+  
+  <Accordion title="Ensemble Model (320x320)">
+    ```yaml Performance Metrics
+    Instance AUROC: 99.6%
+    Pixel-wise AUROC: 98.2%
+    PRO Score: 94.9%
+    
+    Training time: ~5-8 hours (all 15 categories)
+    GPU memory: 12-15 GB
+    Model size: 5-10 GB total
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Setup MVTec Dataset" icon="database" href="/training/mvtec-setup">
+    Download and organize the MVTec AD benchmark dataset
+  </Card>
+  
+  <Card title="Train Single Model" icon="microchip" href="/training/single-model">
+    Train your first PatchCore model with WideResNet50
+  </Card>
+  
+  <Card title="Configuration Guide" icon="sliders" href="/training/configuration">
+    Deep dive into all training parameters
+  </Card>
+  
+  <Card title="Ensemble Models" icon="layer-group" href="/training/ensemble-models">
+    Combine multiple backbones for maximum performance
+  </Card>
+</CardGroup>

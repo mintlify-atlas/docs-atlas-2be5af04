@@ -1,0 +1,275 @@
+---
+title: Model Evaluation
+description: Evaluate trained PatchCore models and compute anomaly detection metrics
+---
+
+## Overview
+
+PatchCore evaluation computes both image-level and pixel-level anomaly detection performance on test datasets. The evaluation script loads pretrained models and generates comprehensive metrics including AUROC and PRO scores.
+
+## Evaluation Script
+
+Use `bin/load_and_evaluate_patchcore.py` to evaluate saved models:
+
+```bash
+python bin/load_and_evaluate_patchcore.py \
+  --gpu 0 \
+  --seed 0 \
+  evaluated_results/IM224_WR50 \
+  patch_core_loader \
+    -p results/models/mvtec_bottle \
+    -p results/models/mvtec_cable \
+    --faiss_on_gpu \
+  dataset \
+    --resize 256 \
+    --imagesize 224 \
+    -d bottle \
+    -d cable \
+    mvtec /path/to/mvtec/data
+```
+
+<Steps>
+  <Step title="Specify output directory">
+    First positional argument: `evaluated_results/IM224_WR50` - where results will be saved
+  </Step>
+  
+  <Step title="Configure model loader">
+    Use `patch_core_loader` with `-p` flags to specify model paths for each subdataset
+  </Step>
+  
+  <Step title="Configure dataset">
+    Use `dataset` command with `-d` flags to specify which subdatasets to evaluate
+  </Step>
+</Steps>
+
+## Complete Evaluation Example
+
+Here's a complete evaluation script for all MVTec AD categories (from sample_evaluation.sh:1):
+
+```bash
+#!/bin/bash
+
+datapath=/path/to/data/from/mvtec
+loadpath=/path/to/pretrained/patchcore/model
+
+modelfolder=IM320_Ensemble_L2-3_P001_D1024-384_PS-3_AN-1
+savefolder=evaluated_results'/'$modelfolder
+
+datasets=('bottle'  'cable'  'capsule'  'carpet'  'grid'  'hazelnut' \
+          'leather'  'metal_nut'  'pill' 'screw' 'tile' 'toothbrush' \
+          'transistor' 'wood' 'zipper')
+          
+model_flags=($(for dataset in "${datasets[@]}"; do \
+  echo '-p '$loadpath'/'$modelfolder'/models/mvtec_'$dataset; done))
+  
+dataset_flags=($(for dataset in "${datasets[@]}"; do \
+  echo '-d '$dataset; done))
+
+python bin/load_and_evaluate_patchcore.py --gpu 0 --seed 0 $savefolder \
+patch_core_loader "${model_flags[@]}" --faiss_on_gpu \
+dataset --resize 366 --imagesize 320 "${dataset_flags[@]}" mvtec $datapath
+```
+
+## Evaluation Metrics
+
+The evaluation computes three key metrics for each dataset:
+
+### Image-Level AUROC
+
+```python
+# Compute image-level anomaly detection (source:load_and_evaluate_patchcore.py:148)
+auroc = patchcore.metrics.compute_imagewise_retrieval_metrics(
+    scores, anomaly_labels
+)["auroc"]
+```
+
+Measures the ability to classify entire images as normal or anomalous. Uses the maximum anomaly score across all patches in an image.
+
+<Accordion title="What is AUROC?">
+  **Area Under the Receiver Operating Characteristic Curve**
+  
+  - Ranges from 0 to 1 (1.0 = perfect)
+  - Measures discrimination ability across all thresholds
+  - Robust to class imbalance
+  - Standard metric for anomaly detection
+</Accordion>
+
+### Pixel-Level AUROC (Full)
+
+Computed on all test images including normal images:
+
+```python
+# Full pixel-level AUROC (source:load_and_evaluate_patchcore.py:154)
+pixel_scores = patchcore.metrics.compute_pixelwise_retrieval_metrics(
+    segmentations, masks_gt
+)
+full_pixel_auroc = pixel_scores["auroc"]
+```
+
+Measures pixel-level localization accuracy across the entire test set.
+
+### Pixel-Level AUROC (Anomaly Only)
+
+Computed only on images containing anomalies:
+
+```python
+# Select only images with anomalies (source:load_and_evaluate_patchcore.py:160)
+sel_idxs = []
+for i in range(len(masks_gt)):
+    if np.sum(masks_gt[i]) > 0:
+        sel_idxs.append(i)
+        
+pixel_scores = patchcore.metrics.compute_pixelwise_retrieval_metrics(
+    [segmentations[i] for i in sel_idxs], 
+    [masks_gt[i] for i in sel_idxs]
+)
+anomaly_pixel_auroc = pixel_scores["auroc"]
+```
+
+Provides a more focused measure of localization performance on defective regions.
+
+## Example Output
+
+During evaluation, you'll see progress and results like this:
+
+```
+Evaluating dataset [mvtec_bottle] (1/15)...
+Embedding test data with models (1/1)
+Inferring...: 100%|████████████| 83/83 [00:24<00:00,  3.38it/s]
+Computing evaluation metrics.
+instance_auroc: 1.000
+full_pixel_auroc: 0.988
+anomaly_pixel_auroc: 0.984
+
+-----
+
+Evaluating dataset [mvtec_cable] (2/15)...
+...
+```
+
+<Note>
+The `Inferring...` progress bar shows prediction progress. Evaluation metrics are computed after all predictions are complete.
+</Note>
+
+## Understanding the Evaluation Process
+
+The evaluation pipeline (source:load_and_evaluate_patchcore.py:58):
+
+<Steps>
+  <Step title="Load models and datasets">
+    Iterate through dataset/model pairs, loading one PatchCore model per subdataset
+  </Step>
+  
+  <Step title="Generate predictions">
+    ```python
+    scores, segmentations, labels_gt, masks_gt = PatchCore.predict(
+        dataloaders["testing"]
+    )
+    ```
+    Run inference on all test images to get anomaly scores and segmentation maps
+  </Step>
+  
+  <Step title="Normalize scores">
+    ```python
+    min_scores = scores.min(axis=-1).reshape(-1, 1)
+    max_scores = scores.max(axis=-1).reshape(-1, 1)
+    scores = (scores - min_scores) / (max_scores - min_scores)
+    ```
+    Normalize to [0, 1] range for consistent thresholding
+  </Step>
+  
+  <Step title="Compute metrics">
+    Calculate AUROC for image-level detection and pixel-level localization
+  </Step>
+  
+  <Step title="Save results">
+    Store metrics in CSV format with per-dataset breakdown
+  </Step>
+</Steps>
+
+## Ensemble Evaluation
+
+For ensemble models, predictions from multiple models are aggregated:
+
+```python
+# Aggregate predictions from ensemble members (source:load_and_evaluate_patchcore.py:75)
+aggregator = {"scores": [], "segmentations": []}
+for i, PatchCore in enumerate(PatchCore_list):
+    scores, segmentations, labels_gt, masks_gt = PatchCore.predict(
+        dataloaders["testing"]
+    )
+    aggregator["scores"].append(scores)
+    aggregator["segmentations"].append(segmentations)
+
+# Average ensemble predictions after normalization
+scores = np.mean(scores, axis=0)
+segmentations = np.mean(segmentations, axis=0)
+```
+
+<Warning>
+Each ensemble member is normalized independently before averaging. This prevents models with different score ranges from dominating the ensemble.
+</Warning>
+
+## Results Storage
+
+Evaluation results are saved in the specified output directory:
+
+```
+evaluated_results/IM224_WR50/
+├── results.csv                    # Aggregate metrics for all datasets
+└── segmentation_images/          # (optional) Visual results
+    ├── mvtec_bottle/
+    ├── mvtec_cable/
+    └── ...
+```
+
+The `results.csv` file contains:
+
+```csv
+dataset_name,instance_auroc,full_pixel_auroc,anomaly_pixel_auroc
+mvtec_bottle,1.000,0.988,0.984
+mvtec_cable,0.993,0.982,0.978
+...
+mean,0.996,0.984,0.980
+```
+
+## Saving Segmentation Images
+
+To visualize predictions, use the `--save_segmentation_images` flag:
+
+```bash
+python bin/load_and_evaluate_patchcore.py \
+  --gpu 0 \
+  --save_segmentation_images \
+  ...
+```
+
+This generates overlay images showing:
+- Original input image
+- Ground truth mask (if available)
+- Predicted anomaly heatmap
+- Anomaly score
+
+## Expected Performance
+
+State-of-the-art pretrained models achieve:
+
+| Model | Image AUROC | Pixel AUROC | PRO Score |
+|-------|-------------|-------------|----------|
+| WR50-baseline | 99.2% | 98.1% | 94.4% |
+| Ensemble | **99.6%** | **98.2%** | **94.9%** |
+
+<Note>
+Results may vary slightly due to hardware differences and software versions, but should be within 0.1-0.3% of reported values.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Load Models" icon="folder-open" href="/inference/loading-models">
+    Learn how to load and initialize saved models
+  </Card>
+  <Card title="Batch Prediction" icon="images" href="/inference/batch-prediction">
+    Run inference on custom image datasets
+  </Card>
+</CardGroup>

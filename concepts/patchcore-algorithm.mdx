@@ -1,0 +1,230 @@
+---
+title: PatchCore Algorithm
+description: Understanding the PatchCore algorithm for industrial anomaly detection
+icon: microchip
+---
+
+PatchCore is a state-of-the-art anomaly detection method that achieves up to **99.6% image-level AUROC** and **98.4% pixel-level localization AUROC** on industrial inspection tasks. It works by building a memory bank of patch-level features from normal training images and using nearest neighbor search to identify anomalies.
+
+## Algorithm Overview
+
+The PatchCore algorithm operates in two distinct phases:
+
+<Steps>
+  <Step title="Training Phase">
+    Extract patch features from normal images, apply coreset subsampling, and build a memory bank
+  </Step>
+  <Step title="Inference Phase">
+    Compare test image patches to the memory bank using nearest neighbor search to compute anomaly scores
+  </Step>
+</Steps>
+
+## Architecture
+
+<img src="/images/architecture.png" alt="PatchCore Architecture" />
+
+The PatchCore pipeline consists of several key components:
+
+1. **Pretrained Backbone**: Extracts multi-scale features (typically WideResNet50)
+2. **Patch-level Aggregation**: Converts feature maps into locally aware patch representations
+3. **Coreset Subsampling**: Reduces memory bank size while preserving diversity
+4. **Nearest Neighbor Search**: Uses FAISS for efficient similarity matching
+
+## Core Class Structure
+
+The main `PatchCore` class inherits from `torch.nn.Module` and manages the entire pipeline:
+
+```python patchcore.py
+class PatchCore(torch.nn.Module):
+    def __init__(self, device):
+        """PatchCore anomaly detection class."""
+        super(PatchCore, self).__init__()
+        self.device = device
+```
+
+### Key Methods
+
+<AccordionGroup>
+  <Accordion title="load() - Initialize the Model">
+    Configures the PatchCore model with backbone network, feature extraction layers, and scoring parameters.
+
+    ```python patchcore.py
+    def load(
+        self,
+        backbone,
+        layers_to_extract_from,
+        device,
+        input_shape,
+        pretrain_embed_dimension,
+        target_embed_dimension,
+        patchsize=3,
+        patchstride=1,
+        anomaly_score_num_nn=1,
+        featuresampler=patchcore.sampler.IdentitySampler(),
+        nn_method=patchcore.common.FaissNN(False, 4),
+        **kwargs,
+    ):
+    ```
+
+    **Key Parameters:**
+    - `backbone`: Pretrained CNN (e.g., WideResNet50, ResNet101)
+    - `layers_to_extract_from`: Which layers to extract features from (e.g., ['layer2', 'layer3'])
+    - `patchsize`: Size of local neighborhood aggregation (default: 3)
+    - `anomaly_score_num_nn`: Number of nearest neighbors for scoring (default: 1)
+    - `featuresampler`: Coreset sampling strategy
+  </Accordion>
+
+  <Accordion title="fit() - Train the Model">
+    Computes embeddings from training data and fills the memory bank.
+
+    ```python patchcore.py
+    def fit(self, training_data):
+        """PatchCore training.
+        
+        This function computes the embeddings of the training data and fills the
+        memory bank of SPADE.
+        """
+        self._fill_memory_bank(training_data)
+    ```
+
+    The training process:
+    1. Extracts features from all normal training images
+    2. Applies coreset subsampling to reduce memory footprint
+    3. Builds FAISS index for fast nearest neighbor search
+  </Accordion>
+
+  <Accordion title="predict() - Detect Anomalies">
+    Computes anomaly scores and segmentation masks for test images.
+
+    ```python patchcore.py
+    def _predict(self, images):
+        """Infer score and mask for a batch of images."""
+        images = images.to(torch.float).to(self.device)
+        _ = self.forward_modules.eval()
+        
+        batchsize = images.shape[0]
+        with torch.no_grad():
+            features, patch_shapes = self._embed(images, provide_patch_shapes=True)
+            features = np.asarray(features)
+            
+            patch_scores = image_scores = self.anomaly_scorer.predict([features])[0]
+            image_scores = self.patch_maker.unpatch_scores(
+                image_scores, batchsize=batchsize
+            )
+            image_scores = image_scores.reshape(*image_scores.shape[:2], -1)
+            image_scores = self.patch_maker.score(image_scores)
+            
+            patch_scores = self.patch_maker.unpatch_scores(
+                patch_scores, batchsize=batchsize
+            )
+            scales = patch_shapes[0]
+            patch_scores = patch_scores.reshape(batchsize, scales[0], scales[1])
+            
+            masks = self.anomaly_segmentor.convert_to_segmentation(patch_scores)
+        
+        return [score for score in image_scores], [mask for mask in masks]
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## PatchMaker: Local Aggregation
+
+The `PatchMaker` class handles the conversion of feature maps into locally aggregated patches:
+
+```python patchcore.py
+class PatchMaker:
+    def __init__(self, patchsize, stride=None):
+        self.patchsize = patchsize
+        self.stride = stride
+    
+    def patchify(self, features, return_spatial_info=False):
+        """Convert a tensor into a tensor of respective patches.
+        Args:
+            x: [torch.Tensor, bs x c x w x h]
+        Returns:
+            x: [torch.Tensor, bs * w//stride * h//stride, c, patchsize,
+            patchsize]
+        """
+        padding = int((self.patchsize - 1) / 2)
+        unfolder = torch.nn.Unfold(
+            kernel_size=self.patchsize, stride=self.stride, padding=padding, dilation=1
+        )
+        unfolded_features = unfolder(features)
+        # ... reshape and permute operations
+```
+
+<Note>
+  The default `patchsize=3` with `stride=1` creates overlapping patches that capture local spatial context. This is crucial for precise anomaly localization.
+</Note>
+
+## Forward Modules Pipeline
+
+PatchCore uses a modular forward pipeline:
+
+```python patchcore.py
+self.forward_modules = torch.nn.ModuleDict({})
+
+# 1. Feature Aggregator - Extracts features from backbone layers
+feature_aggregator = patchcore.common.NetworkFeatureAggregator(
+    self.backbone, self.layers_to_extract_from, self.device
+)
+self.forward_modules["feature_aggregator"] = feature_aggregator
+
+# 2. Preprocessing - Normalizes feature dimensions
+preprocessing = patchcore.common.Preprocessing(
+    feature_dimensions, pretrain_embed_dimension
+)
+self.forward_modules["preprocessing"] = preprocessing
+
+# 3. Aggregator - Combines multi-layer features
+preadapt_aggregator = patchcore.common.Aggregator(
+    target_dim=target_embed_dimension
+)
+self.forward_modules["preadapt_aggregator"] = preadapt_aggregator
+```
+
+## Training Example
+
+Here's how to train PatchCore on MVTec AD:
+
+```bash
+python bin/run_patchcore.py --gpu 0 --seed 0 --save_patchcore_model \
+  --log_group IM224_WR50_L2-3_P01_D1024-1024_PS-3_AN-1_S0 \
+  patch_core -b wideresnet50 -le layer2 -le layer3 --faiss_on_gpu \
+  --pretrain_embed_dimension 1024 --target_embed_dimension 1024 \
+  --anomaly_scorer_num_nn 1 --patchsize 3 \
+  sampler -p 0.1 approx_greedy_coreset \
+  dataset --resize 256 --imagesize 224 mvtec $datapath
+```
+
+<Tip>
+  Using `--faiss_on_gpu` significantly accelerates nearest neighbor search, especially for large memory banks.
+</Tip>
+
+## Performance Characteristics
+
+| Model | Mean AUROC | Mean Seg. AUROC | Mean PRO |
+|-------|------------|-----------------|----------|
+| WR50-baseline | 99.2% | 98.1% | 94.4% |
+| Ensemble | **99.6%** | **98.2%** | **94.9%** |
+
+<Info>
+  PatchCore is extremely efficient - training requires only a single forward pass through normal images without any gradient computation!
+</Info>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Feature Extraction" icon="layer-group" href="/concepts/feature-extraction">
+    Learn how PatchCore extracts multi-scale features
+  </Card>
+  <Card title="Coreset Sampling" icon="filter" href="/concepts/coreset-sampling">
+    Understand memory bank compression techniques
+  </Card>
+  <Card title="Anomaly Scoring" icon="gauge-high" href="/concepts/anomaly-scoring">
+    Explore nearest neighbor-based scoring
+  </Card>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Start using PatchCore in your project
+  </Card>
+</CardGroup>

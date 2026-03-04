@@ -1,0 +1,414 @@
+---
+title: 'run_patchcore.py'
+description: 'Train PatchCore models for industrial anomaly detection'
+icon: 'terminal'
+---
+
+## Overview
+
+The `run_patchcore.py` script is the primary CLI tool for training PatchCore models on industrial anomaly detection datasets. It uses a command-chaining architecture where you specify a main command followed by three required subcommands: `patch_core`, `sampler`, and `dataset`.
+
+## Command Structure
+
+```bash
+python bin/run_patchcore.py [MAIN_OPTIONS] RESULTS_PATH \
+  patch_core [PATCHCORE_OPTIONS] \
+  sampler [SAMPLER_OPTIONS] SAMPLER_NAME \
+  dataset [DATASET_OPTIONS] DATASET_NAME DATA_PATH
+```
+
+## Main Command
+
+### Arguments
+
+<ParamField path="results_path" type="string" required>
+  Path where training results, models, and evaluation metrics will be saved
+</ParamField>
+
+### Options
+
+<ParamField path="--gpu" type="int" default="0">
+  GPU device ID(s) to use for training. Can specify multiple GPUs by repeating the flag.
+  
+  ```bash
+  --gpu 0 --gpu 1  # Use GPUs 0 and 1
+  ```
+</ParamField>
+
+<ParamField path="--seed" type="int" default="0">
+  Random seed for reproducibility across training runs
+</ParamField>
+
+<ParamField path="--log_group" type="string" default="group">
+  Logging group name for organizing experiment results
+</ParamField>
+
+<ParamField path="--log_project" type="string" default="project">
+  Logging project name for organizing experiment results
+</ParamField>
+
+<ParamField path="--save_segmentation_images" type="flag">
+  Save visualization images showing anomaly segmentation results. Useful for qualitative analysis.
+</ParamField>
+
+<ParamField path="--save_patchcore_model" type="flag">
+  Save trained PatchCore model to disk for later evaluation or deployment
+</ParamField>
+
+---
+
+## Subcommand: patch_core
+
+Configures the PatchCore model architecture and training parameters.
+
+### Backbone Options
+
+<ParamField path="--backbone_names" type="string" multiple>
+  Short flag: `-b`
+  
+  Pretrained backbone network(s) to extract features. Supports multiple backbones for ensemble models.
+  
+  **Supported backbones:**
+  - `wideresnet50` - Wide ResNet-50
+  - `wideresnet101` - Wide ResNet-101
+  - `resnext101` - ResNeXt-101
+  - `densenet201` - DenseNet-201
+  
+  ```bash
+  -b wideresnet50  # Single backbone
+  -b wideresnet101 -b resnext101 -b densenet201  # Ensemble
+  ```
+</ParamField>
+
+<ParamField path="--layers_to_extract_from" type="string" multiple>
+  Short flag: `-le`
+  
+  Layer names from which to extract feature embeddings. For ensemble models with multiple backbones, prefix with backbone index (e.g., `0.layer2`, `1.layer2`).
+  
+  ```bash
+  # Single backbone
+  -le layer2 -le layer3
+  
+  # Ensemble (3 backbones)
+  -le 0.layer2 -le 0.layer3 \
+  -le 1.layer2 -le 1.layer3 \
+  -le 2.features.denseblock2 -le 2.features.denseblock3
+  ```
+</ParamField>
+
+### Embedding Dimensions
+
+<ParamField path="--pretrain_embed_dimension" type="int" default="1024">
+  Dimensionality of pretrained backbone features before projection
+</ParamField>
+
+<ParamField path="--target_embed_dimension" type="int" default="1024">
+  Target dimensionality after projection. Lower values reduce memory usage.
+</ParamField>
+
+### Processing Options
+
+<ParamField path="--preprocessing" type="choice" default="mean">
+  Feature preprocessing method
+  
+  **Choices:** `mean`, `conv`
+</ParamField>
+
+<ParamField path="--aggregation" type="choice" default="mean">
+  Feature aggregation method
+  
+  **Choices:** `mean`, `mlp`
+</ParamField>
+
+### Patch Parameters
+
+<ParamField path="--patchsize" type="int" default="3">
+  Size of the neighborhood patch for anomaly scoring. Larger values provide more spatial context.
+  
+  - Detection tasks: typically `3`
+  - Segmentation tasks: typically `5`
+</ParamField>
+
+<ParamField path="--patchscore" type="string" default="max">
+  Method for computing patch-level anomaly scores
+</ParamField>
+
+<ParamField path="--patchoverlap" type="float" default="0.0">
+  Overlap ratio between adjacent patches (0.0 = no overlap, 0.5 = 50% overlap)
+</ParamField>
+
+<ParamField path="--patchsize_aggregate" type="int" multiple>
+  Short flag: `-pa`
+  
+  Additional patch sizes for multi-scale aggregation
+</ParamField>
+
+### Anomaly Scoring
+
+<ParamField path="--anomaly_scorer_num_nn" type="int" default="5">
+  Number of nearest neighbors (k-NN) used for anomaly scoring
+  
+  - Detection: typically `1`
+  - Segmentation: typically `3` or `5`
+</ParamField>
+
+### FAISS Options
+
+<ParamField path="--faiss_on_gpu" type="flag">
+  Use GPU-accelerated FAISS for nearest neighbor search. Significantly speeds up inference.
+</ParamField>
+
+<ParamField path="--faiss_num_workers" type="int" default="8">
+  Number of CPU workers for FAISS operations
+</ParamField>
+
+---
+
+## Subcommand: sampler
+
+Configures coreset sampling strategy for reducing memory bank size.
+
+### Arguments
+
+<ParamField path="name" type="string" required>
+  Sampler type to use
+  
+  **Options:**
+  - `identity` - Use all training features (no sampling)
+  - `greedy_coreset` - Greedy coreset selection
+  - `approx_greedy_coreset` - Approximate greedy coreset (faster)
+</ParamField>
+
+### Options
+
+<ParamField path="--percentage" type="float" default="0.1">
+  Short flag: `-p`
+  
+  Percentage of training features to retain in the memory bank
+  
+  - `0.1` = 10% (faster, less memory)
+  - `0.01` = 1% (even faster, minimal accuracy loss)
+</ParamField>
+
+---
+
+## Subcommand: dataset
+
+Configures dataset loading and preprocessing.
+
+### Arguments
+
+<ParamField path="name" type="string" required>
+  Dataset type. Currently supported: `mvtec`
+</ParamField>
+
+<ParamField path="data_path" type="path" required>
+  Path to the dataset root directory. Must exist.
+</ParamField>
+
+### Options
+
+<ParamField path="--subdatasets" type="string" multiple required>
+  Short flag: `-d`
+  
+  Dataset categories to train on. For MVTec AD, this includes:
+  
+  `bottle`, `cable`, `capsule`, `carpet`, `grid`, `hazelnut`, `leather`, `metal_nut`, `pill`, `screw`, `tile`, `toothbrush`, `transistor`, `wood`, `zipper`
+  
+  ```bash
+  -d bottle -d cable -d capsule  # Train on specific categories
+  ```
+</ParamField>
+
+<ParamField path="--train_val_split" type="float" default="1.0">
+  Fraction of training data to use for training (remainder used for validation)
+  
+  - `1.0` = use all training data
+  - `0.8` = 80% train, 20% validation
+</ParamField>
+
+<ParamField path="--batch_size" type="int" default="2">
+  Batch size for data loading
+</ParamField>
+
+<ParamField path="--num_workers" type="int" default="8">
+  Number of worker processes for data loading
+</ParamField>
+
+<ParamField path="--resize" type="int" default="256">
+  Image resize dimension (before center cropping)
+</ParamField>
+
+<ParamField path="--imagesize" type="int" default="224">
+  Final image size after center cropping
+  
+  - `224` - Standard ImageNet size
+  - `320` - Higher resolution for better segmentation
+</ParamField>
+
+<ParamField path="--augment" type="flag">
+  Apply data augmentation during training
+</ParamField>
+
+---
+
+## Examples
+
+### Basic Training (Single Dataset)
+
+```bash
+python bin/run_patchcore.py \
+  --gpu 0 \
+  --seed 0 \
+  --save_patchcore_model \
+  results/my_experiment \
+  patch_core \
+    -b wideresnet50 \
+    -le layer2 -le layer3 \
+    --faiss_on_gpu \
+    --pretrain_embed_dimension 1024 \
+    --target_embed_dimension 1024 \
+    --anomaly_scorer_num_nn 1 \
+    --patchsize 3 \
+  sampler -p 0.1 approx_greedy_coreset \
+  dataset \
+    --resize 256 \
+    --imagesize 224 \
+    -d bottle \
+    mvtec /path/to/mvtec
+```
+
+### Baseline Detection Model (IM224)
+
+Wide ResNet-50, 10% coreset, optimized for detection:
+
+```bash
+python bin/run_patchcore.py \
+  --gpu 0 \
+  --seed 0 \
+  --save_patchcore_model \
+  --log_group IM224_WR50_L2-3_P01_D1024-1024_PS-3_AN-1_S0 \
+  --log_project MVTecAD_Results \
+  results \
+  patch_core \
+    -b wideresnet50 \
+    -le layer2 -le layer3 \
+    --faiss_on_gpu \
+    --pretrain_embed_dimension 1024 \
+    --target_embed_dimension 1024 \
+    --anomaly_scorer_num_nn 1 \
+    --patchsize 3 \
+  sampler -p 0.1 approx_greedy_coreset \
+  dataset \
+    --resize 256 \
+    --imagesize 224 \
+    -d bottle -d cable -d capsule \
+    mvtec /path/to/mvtec
+```
+
+**Expected Performance:** Instance AUROC: 0.992, Pixelwise AUROC: 0.981
+
+### Ensemble Model (IM224)
+
+Multiple backbones for improved accuracy:
+
+```bash
+python bin/run_patchcore.py \
+  --gpu 0 \
+  --seed 3 \
+  --save_patchcore_model \
+  --log_group IM224_Ensemble_L2-3_P001_D1024-384_PS-3_AN-1_S3 \
+  results \
+  patch_core \
+    -b wideresnet101 -b resnext101 -b densenet201 \
+    -le 0.layer2 -le 0.layer3 \
+    -le 1.layer2 -le 1.layer3 \
+    -le 2.features.denseblock2 -le 2.features.denseblock3 \
+    --faiss_on_gpu \
+    --pretrain_embed_dimension 1024 \
+    --target_embed_dimension 384 \
+    --anomaly_scorer_num_nn 1 \
+    --patchsize 3 \
+  sampler -p 0.01 approx_greedy_coreset \
+  dataset \
+    --resize 256 \
+    --imagesize 224 \
+    -d bottle -d cable -d capsule \
+    mvtec /path/to/mvtec
+```
+
+**Expected Performance:** Instance AUROC: 0.993, Pixelwise AUROC: 0.981
+
+### High-Resolution Segmentation (IM320)
+
+Optimized for pixel-level anomaly segmentation:
+
+```bash
+python bin/run_patchcore.py \
+  --gpu 0 \
+  --seed 22 \
+  --save_patchcore_model \
+  --save_segmentation_images \
+  results \
+  patch_core \
+    -b wideresnet50 \
+    -le layer2 -le layer3 \
+    --faiss_on_gpu \
+    --pretrain_embed_dimension 1024 \
+    --target_embed_dimension 1024 \
+    --anomaly_scorer_num_nn 3 \
+    --patchsize 5 \
+  sampler -p 0.01 approx_greedy_coreset \
+  dataset \
+    --resize 366 \
+    --imagesize 320 \
+    -d bottle \
+    mvtec /path/to/mvtec
+```
+
+**Expected Performance:** Instance AUROC: 0.99, Pixelwise AUROC: 0.984
+
+---
+
+## Output Files
+
+The script creates the following directory structure:
+
+```
+results/
+└── [log_project]/
+    └── [log_group]/
+        ├── models/
+        │   └── mvtec_[category]/
+        │       ├── *.faiss           # Nearest neighbor index
+        │       └── *.pkl             # Model parameters
+        ├── segmentation_images/      # (if --save_segmentation_images)
+        │   └── mvtec_[category]/
+        └── results.csv               # Evaluation metrics
+```
+
+## Metrics Computed
+
+The script automatically computes:
+
+- **Instance AUROC**: Image-level anomaly detection accuracy
+- **Full Pixel AUROC**: Pixel-level segmentation accuracy (all images)
+- **Anomaly Pixel AUROC**: Pixel-level segmentation accuracy (anomalous images only)
+
+<Note>
+  All metrics are saved to `results.csv` with mean scores across all datasets.
+</Note>
+
+## Tips
+
+<Tip>
+  **For faster training:** Use `--faiss_on_gpu` and lower coreset percentage (`-p 0.01`)
+</Tip>
+
+<Tip>
+  **For better segmentation:** Increase `--imagesize` to 320, `--patchsize` to 5, and `--anomaly_scorer_num_nn` to 3-5
+</Tip>
+
+<Tip>
+  **For ensemble models:** Use different backbones and prefix layer names with backbone index (e.g., `0.layer2`, `1.layer2`)
+</Tip>

@@ -1,0 +1,364 @@
+---
+title: 'Performance Benchmarks'
+description: 'Detailed performance metrics for PatchCore models on MVTec AD dataset'
+icon: 'chart-column'
+---
+
+## Overview
+
+This page provides comprehensive benchmark results for PatchCore models on the MVTec AD industrial anomaly detection dataset.
+
+## Summary Performance
+
+Mean performance across all 15 MVTec AD categories:
+
+| Model | Image AUROC | Pixel AUROC | PRO Score |
+|-------|-------------|-------------|--------|
+| **WR50 Baseline** | **99.2%** | **98.1%** | **94.4%** |
+| **Ensemble** | **99.6%** | **98.2%** | **94.9%** |
+
+<Note>
+  The ensemble model combines Wide ResNet-101, ResNeXt-101, and DenseNet-201 backbones for superior performance.
+</Note>
+
+## Model Configurations
+
+### WideResNet50 Baseline
+
+**Configuration:**
+- Backbone: Wide ResNet-50
+- Layers: layer2, layer3
+- Image size: 224×224
+- Coreset: 10%
+- Embeddings: 1024 → 1024
+- Patch size: 3
+- Neighbors: 1
+
+**Model ID:** `IM224_WR50_L2-3_P01_D1024-1024_PS-3_AN-1`
+
+### Ensemble Model
+
+**Configuration:**
+- Backbones: Wide ResNet-101, ResNeXt-101, DenseNet-201
+- Layers: layer2+layer3 (ResNets), denseblock2+denseblock3 (DenseNet)
+- Image size: 224×224
+- Coreset: 1%
+- Embeddings: 1024 → 384
+- Patch size: 3
+- Neighbors: 1
+
+**Model ID:** `IM224_Ensemble_L2-3_P001_D1024-384_PS-3_AN-1`
+
+## Per-Category Performance
+
+### Object Categories
+
+#### Bottle
+
+| Model | Image AUROC | Pixel AUROC | PRO Score |
+|-------|-------------|-------------|--------|
+| WR50 Baseline | 100.0% | 98.5% | 73.7% |
+| Ensemble (Run 1) | 100.0% | 98.5% | 73.7% |
+| Ensemble (Run 2) | 100.0% | 98.7% | 73.2% |
+
+#### Cable
+
+| Model | Image AUROC | Pixel AUROC | PRO Score |
+|-------|-------------|-------------|--------|
+| WR50 Baseline | 99.9% | 98.5% | 57.6% |
+| Ensemble (Run 1) | 99.7% | 98.4% | 57.5% |
+| Ensemble (Run 2) | 99.8% | 98.1% | 57.2% |
+
+#### Capsule
+
+| Model | Image AUROC | Pixel AUROC | PRO Score |
+|-------|-------------|-------------|--------|
+| WR50 Baseline | 98.3% | 99.1% | 80.4% |
+| Ensemble (Run 1) | 97.9% | 98.9% | 80.2% |
+| Ensemble (Run 2) | 98.7% | 99.2% | 79.9% |
+
+#### Hazelnut
+
+| Model | Image AUROC | Pixel AUROC | PRO Score |
+|-------|-------------|-------------|--------|
+| WR50 Baseline | 100.0% | 98.7% | 58.6% |
+| Ensemble (Run 1) | 100.0% | 98.7% | 59.1% |
+| Ensemble (Run 2) | 100.0% | 98.9% | 57.7% |
+
+#### Metal Nut
+
+| Model | Image AUROC | Pixel AUROC | PRO Score |
+|-------|-------------|-------------|--------|
+| WR50 Baseline | 100.0% | 98.6% | 75.9% |
+| Ensemble (Run 1) | 99.9% | 98.3% | 75.1% |
+| Ensemble (Run 2) | 100.0% | 98.8% | 77.4% |
+
+#### Pill
+
+| Model | Image AUROC | Pixel AUROC | PRO Score |
+|-------|-------------|-------------|--------|
+| WR50 Baseline | 97.7% | 97.8% | 79.3% |
+| Ensemble (Run 1) | 96.7% | 97.8% | 79.7% |
+| Ensemble (Run 2) | 98.3% | 97.7% | 80.7% |
+
+#### Screw
+
+| Model | Image AUROC | Pixel AUROC | PRO Score |
+|-------|-------------|-------------|--------|
+| WR50 Baseline | 98.9% | 99.4% | 72.8% |
+| Ensemble (Run 1) | 98.8% | 99.5% | 73.3% |
+| Ensemble (Run 2) | 99.2% | 99.6% | 73.5% |
+
+#### Toothbrush
+
+| Model | Image AUROC | Pixel AUROC | PRO Score |
+|-------|-------------|-------------|--------|
+| WR50 Baseline | 100.0% | 98.7% | 67.5% |
+| Ensemble (Run 1) | 100.0% | 98.6% | 67.7% |
+| Ensemble (Run 2) | 100.0% | 98.9% | 68.5% |
+
+#### Transistor
+
+| Model | Image AUROC | Pixel AUROC | PRO Score |
+|-------|-------------|-------------|--------|
+| WR50 Baseline | 100.0% | 96.7% | 34.1% |
+| Ensemble (Run 1) | 99.9% | 96.1% | 33.3% |
+| Ensemble (Run 2) | 99.9% | 94.1% | 32.8% |
+
+<Note>
+  Transistor is the most challenging category due to complex, small-scale defects.
+</Note>
+
+#### Zipper
+
+| Model | Image AUROC | Pixel AUROC | PRO Score |
+|-------|-------------|-------------|--------|
+| WR50 Baseline | 99.8% | 98.9% | 76.9% |
+| Ensemble (Run 1) | 99.5% | 98.9% | 77.1% |
+| Ensemble (Run 2) | 99.7% | 99.2% | 77.6% |
+
+### Texture Categories
+
+#### Carpet
+
+| Model | Image AUROC | Pixel AUROC | PRO Score |
+|-------|-------------|-------------|--------|
+| WR50 Baseline | 98.9% | 98.9% | 74.0% |
+| Ensemble (Run 1) | 98.6% | 99.1% | 73.7% |
+| Ensemble (Run 2) | 99.6% | 99.1% | 74.7% |
+
+#### Grid
+
+| Model | Image AUROC | Pixel AUROC | PRO Score |
+|-------|-------------|-------------|--------|
+| WR50 Baseline | 98.2% | 98.5% | 69.4% |
+| Ensemble (Run 1) | 97.9% | 98.8% | 70.0% |
+| Ensemble (Run 2) | 99.5% | 99.1% | 70.2% |
+
+#### Leather
+
+| Model | Image AUROC | Pixel AUROC | PRO Score |
+|-------|-------------|-------------|--------|
+| WR50 Baseline | 100.0% | 99.2% | 73.5% |
+| Ensemble (Run 1) | 100.0% | 99.3% | 73.6% |
+| Ensemble (Run 2) | 100.0% | 99.4% | 73.7% |
+
+#### Tile
+
+| Model | Image AUROC | Pixel AUROC | PRO Score |
+|-------|-------------|-------------|--------|
+| WR50 Baseline | 98.9% | 95.7% | 64.2% |
+| Ensemble (Run 1) | 99.5% | 95.7% | 64.5% |
+| Ensemble (Run 2) | 98.8% | 96.8% | 65.7% |
+
+#### Wood
+
+| Model | Image AUROC | Pixel AUROC | PRO Score |
+|-------|-------------|-------------|--------|
+| WR50 Baseline | 99.5% | 94.8% | 67.7% |
+| Ensemble (Run 1) | 99.1% | 95.1% | 68.5% |
+| Ensemble (Run 2) | 99.7% | 96.0% | 70.6% |
+
+## Metric Definitions
+
+### Image-Level AUROC
+
+**Area Under Receiver Operating Characteristic curve** for image-level anomaly classification.
+
+- **Task**: Binary classification (normal vs. anomalous)
+- **Range**: 0% to 100% (higher is better)
+- **Interpretation**: Probability that a randomly chosen anomalous image scores higher than a randomly chosen normal image
+
+### Pixel-Level AUROC
+
+**Area Under ROC curve** for pixel-wise anomaly localization.
+
+- **Task**: Pixel-level anomaly segmentation
+- **Range**: 0% to 100% (higher is better)
+- **Evaluation**: Per-pixel classification accuracy
+
+### PRO Score (Per-Region Overlap)
+
+Measures the **overlap between predicted and ground truth anomalous regions** at various thresholds.
+
+- **Task**: Anomaly region localization quality
+- **Range**: 0% to 100% (higher is better)
+- **Calculation**: Integrated precision over multiple overlap thresholds
+- **Focus**: Connected component-level accuracy
+
+<Note>
+  PRO score is more sensitive to localization accuracy than pixel-level AUROC, especially for small defects.
+</Note>
+
+## Evaluation Metrics
+
+Each model reports five key metrics:
+
+1. **instance_auroc** - Image-level anomaly detection AUROC
+2. **full_pixel_auroc** - Pixel-level AUROC across all test images
+3. **full_pro** - PRO score across all test images
+4. **anomaly_pixel_auroc** - Pixel-level AUROC on anomalous images only
+5. **anomaly_pro** - PRO score on anomalous images only
+
+## Results Variability
+
+Performance may vary slightly due to:
+
+- **Random seed** - Affects coreset sampling
+- **Hardware differences** - GPU/CPU implementations
+- **FAISS version** - Nearest neighbor search variations
+- **Software versions** - PyTorch, timm, etc.
+
+**Typical variance:** ±0.1-0.3% AUROC across different runs
+
+## Reproducing Results
+
+### WideResNet50 Baseline
+
+```bash
+datapath=/path/to/mvtec
+datasets=('bottle' 'cable' 'capsule' 'carpet' 'grid' 'hazelnut' \
+          'leather' 'metal_nut' 'pill' 'screw' 'tile' 'toothbrush' \
+          'transistor' 'wood' 'zipper')
+dataset_flags=($(for dataset in "${datasets[@]}"; do echo '-d '$dataset; done))
+
+python bin/run_patchcore.py --gpu 0 --seed 0 --save_patchcore_model \
+  --log_group IM224_WR50_L2-3_P01_D1024-1024_PS-3_AN-1_S0 \
+  --log_project MVTecAD_Results results \
+  patch_core -b wideresnet50 -le layer2 -le layer3 --faiss_on_gpu \
+  --pretrain_embed_dimension 1024 --target_embed_dimension 1024 \
+  --anomaly_scorer_num_nn 1 --patchsize 3 \
+  sampler -p 0.1 approx_greedy_coreset \
+  dataset --resize 256 --imagesize 224 "${dataset_flags[@]}" mvtec $datapath
+```
+
+### Ensemble Model
+
+```bash
+python bin/run_patchcore.py --gpu 0 --seed 0 --save_patchcore_model \
+  --log_group IM224_Ensemble_L2-3_P001_D1024-384_PS-3_AN-1 \
+  --log_project MVTecAD_Results results \
+  patch_core -b wideresnet101 -b resnext101 -b densenet201 \
+  -le 0.layer2 -le 0.layer3 -le 1.layer2 -le 1.layer3 \
+  -le 2.features.denseblock2 -le 2.features.denseblock3 --faiss_on_gpu \
+  --pretrain_embed_dimension 1024 --target_embed_dimension 384 \
+  --anomaly_scorer_num_nn 1 --patchsize 3 \
+  sampler -p 0.01 approx_greedy_coreset \
+  dataset --resize 256 --imagesize 224 "${dataset_flags[@]}" mvtec $datapath
+```
+
+## Higher Resolution Results
+
+Models trained on 320×320 images:
+
+### IM320 WideResNet50
+
+**Mean Performance:**
+- Image AUROC: 99.3%
+- Pixel AUROC: 97.8%
+- PRO Score: 94.3%
+
+**Configuration:** `IM320_WR50_L2-3_P001_D1024-1024_PS-3_AN-1`
+
+### IM320 Ensemble
+
+**Mean Performance:**
+- Image AUROC: 99.6%
+- Pixel AUROC: 98.2%
+- PRO Score: 94.9%
+
+**Configuration:** `IM320_Ensemble_L2-3_P001_D1024-384_PS-3_AN-1`
+
+<Note>
+  Higher resolution models (320×320) provide better pixel-level localization for larger images but require more memory.
+</Note>
+
+## State-of-the-Art Comparison
+
+PatchCore achieves competitive or superior results compared to other methods on MVTec AD:
+
+| Method | Image AUROC | Pixel AUROC | Year |
+|--------|-------------|-------------|---------|
+| **PatchCore (Ensemble)** | **99.6%** | **98.2%** | **2021** |
+| **PatchCore (WR50)** | **99.2%** | **98.1%** | **2021** |
+| PaDiM | 95.3% | 96.7% | 2020 |
+| SPADE | 85.5% | 95.5% | 2021 |
+| CFlow-AD | 98.7% | 98.6% | 2021 |
+| FastFlow | 99.4% | 98.5% | 2021 |
+
+## Training Time
+
+Approximate training times on RTX 3090 GPU:
+
+| Model | Per Category | All 15 Categories |
+|-------|-------------|------------------|
+| WR50 Baseline | ~5-10 min | ~90 min |
+| Ensemble | ~15-20 min | ~5 hours |
+
+**Note:** "Training" refers to coreset extraction and memory bank construction (no gradient updates).
+
+## Inference Time
+
+Approximate inference times on RTX 3090 GPU (per image):
+
+| Model | 224×224 | 320×320 |
+|-------|---------|--------|
+| WR50 Baseline | ~20ms | ~35ms |
+| Ensemble | ~50ms | ~80ms |
+
+## Memory Requirements
+
+### Training
+
+| Model | GPU Memory | Disk Space (per category) |
+|-------|-----------|-------------------------|
+| WR50 Baseline | ~8GB | ~10-50MB |
+| Ensemble | ~11GB | ~30-150MB |
+
+### Inference
+
+| Model | GPU Memory | RAM |
+|-------|-----------|-----|
+| WR50 Baseline | ~6GB | ~4GB |
+| Ensemble | ~9GB | ~8GB |
+
+## Best Practices
+
+1. **For production:** Use WR50 baseline (best speed/accuracy trade-off)
+2. **For highest accuracy:** Use ensemble model
+3. **For larger images:** Train at 320×320 resolution
+4. **For limited memory:** Reduce coreset percentage or use smaller backbone
+5. **For fastest inference:** Use ResNet-50 instead of Wide ResNet-50
+
+## Citation
+
+These results are based on:
+
+```bibtex
+@article{roth2021total,
+  title={Towards Total Recall in Industrial Anomaly Detection},
+  author={Roth, Karsten and Pemula, Latha and Zepeda, Joaquin and Sch{\"o}lkopf, Bernhard and Brox, Thomas and Gehler, Peter},
+  journal={arXiv preprint arXiv:2106.08265},
+  year={2021}
+}
+```

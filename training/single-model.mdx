@@ -1,0 +1,473 @@
+---
+title: 'Training a Single Model'
+description: 'Train PatchCore with a single backbone network like WideResNet50'
+icon: 'microchip'
+---
+
+## Overview
+
+Training a single-backbone PatchCore model is the fastest way to get started. This guide uses **WideResNet50** as the backbone, which provides excellent performance while remaining computationally efficient.
+
+<Note>
+  **Recommended for**:
+  - First-time users learning PatchCore
+  - Development and experimentation
+  - Production systems with speed/memory constraints
+  - Achieving 99.2% AUROC on MVTec AD
+</Note>
+
+## Quick Start
+
+Train PatchCore on all MVTec AD categories with recommended settings:
+
+```bash Complete Training Command
+# Set dataset path
+datapath=/path/to/mvtec
+
+# Define all 15 MVTec categories
+datasets=('bottle' 'cable' 'capsule' 'carpet' 'grid' 'hazelnut' 
+          'leather' 'metal_nut' 'pill' 'screw' 'tile' 'toothbrush' 
+          'transistor' 'wood' 'zipper')
+
+# Create dataset flags
+dataset_flags=($(for dataset in "${datasets[@]}"; do echo '-d '$dataset; done))
+
+# Run training
+python bin/run_patchcore.py \
+  --gpu 0 \
+  --seed 0 \
+  --save_patchcore_model \
+  --log_group IM224_WR50_L2-3_P01_D1024-1024_PS-3_AN-1_S0 \
+  --log_project MVTecAD_Results \
+  results \
+patch_core \
+  -b wideresnet50 \
+  -le layer2 \
+  -le layer3 \
+  --faiss_on_gpu \
+  --pretrain_embed_dimension 1024 \
+  --target_embed_dimension 1024 \
+  --anomaly_scorer_num_nn 1 \
+  --patchsize 3 \
+sampler \
+  -p 0.1 \
+  approx_greedy_coreset \
+dataset \
+  --resize 256 \
+  --imagesize 224 \
+  "${dataset_flags[@]}" \
+  mvtec $datapath
+```
+
+<Warning>
+  Don't forget to:
+  - Set `PYTHONPATH` before running: `export PYTHONPATH=src`
+  - Replace `/path/to/mvtec` with your actual dataset path
+  - Ensure MVTec AD is properly set up (see [MVTec Setup](/training/mvtec-setup))
+</Warning>
+
+## Command Structure
+
+The PatchCore training command has four main sections:
+
+<Tabs>
+  <Tab title="Global Arguments">
+    ```bash Global Settings
+    python bin/run_patchcore.py \
+      --gpu 0                    # GPU device ID (use 0 for first GPU)
+      --seed 0                   # Random seed for reproducibility
+      --save_patchcore_model     # Save trained model to disk
+      --log_group experiment_name # Name for this experiment
+      --log_project project_name  # Project folder name
+      results                    # Output directory
+    ```
+    
+    **Key Parameters**:
+    - `--gpu`: Which GPU to use (supports multi-GPU with `--gpu 0 --gpu 1`)
+    - `--seed`: Controls random initialization for reproducibility
+    - `--save_patchcore_model`: Must include to save the model for inference
+    - `results`: Base directory where outputs are stored
+  </Tab>
+  
+  <Tab title="Backbone Config">
+    ```bash PatchCore Configuration
+    patch_core \
+      -b wideresnet50           # Backbone network architecture
+      -le layer2                # Extract from layer2
+      -le layer3                # Extract from layer3
+      --faiss_on_gpu            # Use GPU for nearest neighbor search
+      --pretrain_embed_dimension 1024  # Backbone feature dimension
+      --target_embed_dimension 1024    # Final embedding dimension
+      --anomaly_scorer_num_nn 1        # Number of nearest neighbors
+      --patchsize 3                    # Local aggregation size
+    ```
+    
+    **Critical Choices**:
+    - **Backbone** (`-b`): Network pretrained on ImageNet
+    - **Layers** (`-le`): Which layers to extract features from
+    - **Dimensions**: Balance between memory and performance
+  </Tab>
+  
+  <Tab title="Sampler Config">
+    ```bash Coreset Sampling
+    sampler \
+      -p 0.1                    # Sample 10% of features
+      approx_greedy_coreset     # Sampling algorithm
+    ```
+    
+    **Sampling Methods**:
+    - `approx_greedy_coreset`: Fast approximate coreset (recommended)
+    - `greedy_coreset`: Exact coreset (slower, slightly better)
+    - `identity`: No sampling (uses all features, high memory)
+    
+    **Percentage** (`-p`):
+    - `0.1` (10%): Good for development, faster training
+    - `0.01` (1%): Production setting, minimal accuracy loss
+  </Tab>
+  
+  <Tab title="Dataset Config">
+    ```bash Dataset Configuration
+    dataset \
+      --resize 256              # Initial resize dimension
+      --imagesize 224           # Final crop size (input to backbone)
+      -d bottle                 # Include bottle category
+      -d cable                  # Include cable category
+      [...more categories...]   # Add more with -d
+      mvtec                     # Dataset type
+      $datapath                 # Path to dataset root
+    ```
+    
+    **Image Processing**:
+    1. Load image → 2. Resize to 256×256 → 3. Center crop to 224×224
+    
+    **Categories**: Specify each with `-d category_name`
+  </Tab>
+</Tabs>
+
+## Step-by-Step Training
+
+Let's train on a single category first, then scale to all 15:
+
+<Steps>
+  <Step title="Set Environment">
+    ```bash Setup
+    # Navigate to repository
+    cd /path/to/patchcore
+    
+    # Set Python path
+    export PYTHONPATH=src
+    
+    # Verify dataset
+    ls /path/to/mvtec/bottle/train/good
+    ```
+  </Step>
+  
+  <Step title="Train on Single Category">
+    Start with one category (bottle) to verify setup:
+    
+    ```bash Single Category Training
+    datapath=/path/to/mvtec
+    
+    python bin/run_patchcore.py \
+      --gpu 0 --seed 0 --save_patchcore_model \
+      --log_group WR50_bottle_test \
+      results \
+    patch_core \
+      -b wideresnet50 \
+      -le layer2 -le layer3 \
+      --faiss_on_gpu \
+      --pretrain_embed_dimension 1024 \
+      --target_embed_dimension 1024 \
+      --anomaly_scorer_num_nn 1 \
+      --patchsize 3 \
+    sampler -p 0.1 approx_greedy_coreset \
+    dataset --resize 256 --imagesize 224 -d bottle mvtec $datapath
+    ```
+    
+    **Expected output**:
+    ```
+    Computing support features...
+    Subsampling...
+    Inferring...
+    instance_auroc: 1.000
+    full_pixel_auroc: 0.984
+    anomaly_pixel_auroc: 0.984
+    ```
+  </Step>
+  
+  <Step title="Scale to All Categories">
+    Once verified, train on all 15 categories:
+    
+    ```bash All Categories
+    datapath=/path/to/mvtec
+    datasets=('bottle' 'cable' 'capsule' 'carpet' 'grid' 'hazelnut' 
+              'leather' 'metal_nut' 'pill' 'screw' 'tile' 'toothbrush' 
+              'transistor' 'wood' 'zipper')
+    dataset_flags=($(for dataset in "${datasets[@]}"; do echo '-d '$dataset; done))
+    
+    python bin/run_patchcore.py \
+      --gpu 0 --seed 0 --save_patchcore_model \
+      --log_group IM224_WR50_baseline \
+      results \
+    patch_core -b wideresnet50 -le layer2 -le layer3 --faiss_on_gpu \
+      --pretrain_embed_dimension 1024 --target_embed_dimension 1024 \
+      --anomaly_scorer_num_nn 1 --patchsize 3 \
+    sampler -p 0.1 approx_greedy_coreset \
+    dataset --resize 256 --imagesize 224 "${dataset_flags[@]}" mvtec $datapath
+    ```
+    
+    Training will process each category sequentially. Total time: ~1-2 hours on GPU.
+  </Step>
+  
+  <Step title="Check Results">
+    After training completes:
+    
+    ```bash View Results
+    # Navigate to results directory
+    cd results/MVTecAD_Results/IM224_WR50_baseline_0
+    
+    # View summary metrics
+    cat results.csv
+    
+    # Check saved models
+    ls -lh models/
+    ```
+    
+    Each category will have a dedicated model directory.
+  </Step>
+</Steps>
+
+## Understanding Output Files
+
+After training with `--save_patchcore_model`, you'll see:
+
+```bash Output Structure
+results/
+└── MVTecAD_Results/
+    └── IM224_WR50_baseline_0/
+        ├── models/
+        │   ├── mvtec_bottle/
+        │   │   ├── nnscorer_search_index.faiss  # Nearest neighbor index
+        │   │   └── patchcore_params.pkl         # Model parameters
+        │   ├── mvtec_cable/
+        │   ├── mvtec_capsule/
+        │   └── [...]
+        └── results.csv                           # Performance summary
+```
+
+<Accordion title="What's in each file?">
+  **nnscorer_search_index.faiss**:
+  - FAISS nearest-neighbor search index
+  - Contains memory bank of training features
+  - Size: 50-500 MB depending on sampling percentage
+  
+  **patchcore_params.pkl**:
+  - Model configuration (backbone, layers, dimensions)
+  - Small file (~1 KB)
+  - Needed to load model for inference
+  
+  **results.csv**:
+  - Performance metrics for each category
+  - Columns: dataset_name, instance_auroc, full_pixel_auroc, anomaly_pixel_auroc
+</Accordion>
+
+## All CLI Arguments Explained
+
+Here's every argument used in the training command:
+
+<ParamField path="--gpu" type="int" default="0">
+  GPU device ID. Use `--gpu 0` for first GPU, `--gpu 1` for second, etc.
+</ParamField>
+
+<ParamField path="--seed" type="int" default="0">
+  Random seed for reproducibility. Same seed = same results.
+</ParamField>
+
+<ParamField path="--save_patchcore_model" type="flag">
+  Save trained model to disk. **Required** if you want to use the model later.
+</ParamField>
+
+<ParamField path="--log_group" type="string">
+  Experiment name. Creates a subdirectory with this name in results.
+</ParamField>
+
+<ParamField path="--log_project" type="string" default="project">
+  Project folder name. Organizes experiments into projects.
+</ParamField>
+
+<ParamField path="-b, --backbone_names" type="string" required>
+  Backbone network architecture. Options:
+  - `wideresnet50` (recommended)
+  - `wideresnet101`
+  - `resnet50`, `resnet101`
+  - See [backbones.py:4-47](/home/daytona/workspace/source/src/patchcore/backbones.py:4) for all options
+</ParamField>
+
+<ParamField path="-le, --layers_to_extract_from" type="string" required>
+  Which layers to extract features from. Common choices:
+  - WideResNet: `layer2`, `layer3`
+  - ResNet: `layer2`, `layer3`
+  - DenseNet: `features.denseblock2`, `features.denseblock3`
+</ParamField>
+
+<ParamField path="--pretrain_embed_dimension" type="int" default="1024">
+  Dimensionality of features from backbone layers. Standard: 1024.
+</ParamField>
+
+<ParamField path="--target_embed_dimension" type="int" default="1024">
+  Final embedding dimension after aggregation. Lower = less memory.
+</ParamField>
+
+<ParamField path="--patchsize" type="int" default="3">
+  Neighborhood size for local aggregation. Typical: 3 or 5.
+</ParamField>
+
+<ParamField path="--anomaly_scorer_num_nn" type="int" default="1">
+  Number of nearest neighbors for anomaly scoring. Usually 1, 3, or 5.
+</ParamField>
+
+<ParamField path="--faiss_on_gpu" type="flag">
+  Use GPU for FAISS nearest neighbor search. Faster but uses GPU memory.
+</ParamField>
+
+<ParamField path="-p, --percentage" type="float" default="0.1">
+  Coreset sampling percentage (0.01 = 1%, 0.1 = 10%).
+</ParamField>
+
+<ParamField path="--resize" type="int" default="256">
+  Initial resize dimension before center crop.
+</ParamField>
+
+<ParamField path="--imagesize" type="int" default="224">
+  Final image size after center crop (input to backbone).
+</ParamField>
+
+<ParamField path="-d, --subdatasets" type="string" required>
+  MVTec category names. Repeat for each category: `-d bottle -d cable ...`
+</ParamField>
+
+## Configuration Presets
+
+Try these proven configurations for different use cases:
+
+<CodeGroup>
+```bash Fast Development (10% sampling, 224x224)
+# Quick training for testing (~5-10 min/category)
+python bin/run_patchcore.py --gpu 0 --seed 0 --save_patchcore_model \
+  --log_group dev_fast results \
+patch_core -b wideresnet50 -le layer2 -le layer3 --faiss_on_gpu \
+  --pretrain_embed_dimension 1024 --target_embed_dimension 1024 \
+  --anomaly_scorer_num_nn 1 --patchsize 3 \
+sampler -p 0.1 approx_greedy_coreset \
+dataset --resize 256 --imagesize 224 -d bottle mvtec $datapath
+
+# Expected: ~99% AUROC, 1-2 GB model size
+```
+
+```bash Production (1% sampling, 224x224)
+# Baseline production config from paper
+# Instance AUROC: 99.2%, Pixel AUROC: 98.1%, PRO: 94.4%
+python bin/run_patchcore.py --gpu 0 --seed 0 --save_patchcore_model \
+  --log_group IM224_WR50_L2-3_P01_D1024-1024_PS-3_AN-1_S0 \
+  results \
+patch_core -b wideresnet50 -le layer2 -le layer3 --faiss_on_gpu \
+  --pretrain_embed_dimension 1024 --target_embed_dimension 1024 \
+  --anomaly_scorer_num_nn 1 --patchsize 3 \
+sampler -p 0.01 approx_greedy_coreset \
+dataset --resize 256 --imagesize 224 "${dataset_flags[@]}" mvtec $datapath
+```
+
+```bash High Resolution (1% sampling, 320x320)
+# Better localization, higher resolution
+# Instance AUROC: 99.3%, Pixel AUROC: 97.8%, PRO: 94.3%
+python bin/run_patchcore.py --gpu 0 --seed 22 --save_patchcore_model \
+  --log_group IM320_WR50_L2-3_P001_D1024-1024_PS-3_AN-1_S22 \
+  results \
+patch_core -b wideresnet50 -le layer2 -le layer3 --faiss_on_gpu \
+  --pretrain_embed_dimension 1024 --target_embed_dimension 1024 \
+  --anomaly_scorer_num_nn 1 --patchsize 3 \
+sampler -p 0.01 approx_greedy_coreset \
+dataset --resize 366 --imagesize 320 "${dataset_flags[@]}" mvtec $datapath
+```
+
+```bash Better Segmentation (320x320, larger patches)
+# Optimized for pixel-level segmentation
+# Instance AUROC: 99.0%, Pixel AUROC: 98.4%, PRO: 94.2%
+python bin/run_patchcore.py --gpu 0 --seed 39 --save_patchcore_model \
+  --log_group IM320_WR50_L2-3_P001_D1024-1024_PS-5_AN-3_S39 \
+  results \
+patch_core -b wideresnet50 -le layer2 -le layer3 --faiss_on_gpu \
+  --pretrain_embed_dimension 1024 --target_embed_dimension 1024 \
+  --anomaly_scorer_num_nn 3 --patchsize 5 \
+sampler -p 0.01 approx_greedy_coreset \
+dataset --resize 366 --imagesize 320 "${dataset_flags[@]}" mvtec $datapath
+```
+</CodeGroup>
+
+## Monitoring Training Progress
+
+During training, you'll see progress output:
+
+```bash Training Output
+Command line arguments: bin/run_patchcore.py --gpu 0 ...
+Evaluating dataset [mvtec_bottle] (1/15)...
+Computing support features...: 100%|████████████| 209/209 [00:45<00:00]
+Subsampling...: 100%|████████████████████████| 1679/1679 [01:23<00:00]
+Inferring...: 100%|██████████████████████████| 63/63 [00:12<00:00]
+Computing evaluation metrics.
+instance_auroc: 1.000
+full_pixel_auroc: 0.984
+anomaly_pixel_auroc: 0.984
+Saving PatchCore data.
+
+-----
+
+Evaluating dataset [mvtec_cable] (2/15)...
+[...continues for each category...]
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="CUDA out of memory error">
+    **Problem**: GPU doesn't have enough memory.
+    
+    **Solutions**:
+    1. Reduce batch size: `dataset [...] --batch_size 1 mvtec $datapath`
+    2. Lower image resolution: Use 224 instead of 320
+    3. Reduce target embedding dimension: `--target_embed_dimension 512`
+    4. Use CPU for FAISS: Remove `--faiss_on_gpu`
+  </Accordion>
+  
+  <Accordion title="ModuleNotFoundError: No module named 'patchcore'">
+    **Problem**: Python can't find the patchcore module.
+    
+    **Solution**:
+    ```bash
+    export PYTHONPATH=src
+    # Or run with:
+    env PYTHONPATH=src python bin/run_patchcore.py [...]
+    ```
+  </Accordion>
+  
+  <Accordion title="Training very slow">
+    **Problem**: Training takes much longer than expected.
+    
+    **Causes & Solutions**:
+    - Not using GPU: Verify with `nvidia-smi`, add `--faiss_on_gpu`
+    - High sampling percentage: Use `-p 0.01` instead of `-p 0.1`
+    - Too many workers: Reduce `--num_workers 4` in dataset config
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Ensemble Models" icon="layer-group" href="/training/ensemble-models">
+    Combine multiple backbones for 99.6% AUROC
+  </Card>
+  
+  <Card title="Configuration Reference" icon="book" href="/training/configuration">
+    Deep dive into every parameter
+  </Card>
+</CardGroup>
