@@ -1,0 +1,112 @@
+{
+  "projectType": "ai-ml",
+  "projectName": "PatchCore Industrial Anomaly Detection",
+  "projectDescription": "Industrial anomaly detection using PatchCore with pretrained feature extractors achieving up to 99.6% AUROC on MVTec AD",
+  "theme": "aspen",
+  "primaryColor": "#b21e1e",
+  "lightColor": "#e59f82",
+  "darkColor": "#e0dbd9",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/patchcore-algorithm",
+              "concepts/feature-extraction",
+              "concepts/coreset-sampling",
+              "concepts/anomaly-scoring"
+            ]
+          },
+          {
+            "group": "Training",
+            "pages": [
+              "training/overview",
+              "training/mvtec-setup",
+              "training/single-model",
+              "training/ensemble-models",
+              "training/configuration"
+            ]
+          },
+          {
+            "group": "Inference",
+            "pages": [
+              "inference/loading-models",
+              "inference/evaluation",
+              "inference/batch-prediction"
+            ]
+          },
+          {
+            "group": "Model Zoo",
+            "pages": [
+              "models/pretrained-models",
+              "models/backbones",
+              "models/performance-benchmarks"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core Components",
+            "pages": [
+              "api/patchcore",
+              "api/backbones",
+              "api/sampler",
+              "api/metrics"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/datasets",
+              "api/common",
+              "api/utils"
+            ]
+          },
+          {
+            "group": "CLI Tools",
+            "pages": [
+              "api/run-patchcore",
+              "api/load-and-evaluate"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "State-of-the-art anomaly detection with 99.6% AUROC",
+    "Coreset subsampling for memory efficiency",
+    "50+ pretrained backbone architectures",
+    "Ensemble model support",
+    "FAISS-accelerated nearest neighbor search",
+    "Pretrained models for MVTec AD benchmark"
+  ],
+  "publicApiSurface": [
+    "PatchCore",
+    "PatchCore.load()",
+    "PatchCore.fit()",
+    "PatchCore.predict()",
+    "PatchCore.save_to_path()",
+    "PatchCore.load_from_path()",
+    "backbones.load()",
+    "GreedyCoresetSampler",
+    "ApproximateGreedyCoresetSampler",
+    "RandomSampler",
+    "bin/run_patchcore.py",
+    "bin/load_and_evaluate_patchcore.py"
+  ]
+}
